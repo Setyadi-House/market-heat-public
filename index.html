@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Market Heat & Fragility Score — validated US equity risk-context dashboard">
+<title>Market Heat & Fragility Score — v0.7</title>
+<link rel="stylesheet" href="v07.css">
+</head>
+<body>
+<div class="shell">
+  <header class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="eyebrow">US Equity Risk Context · Structural + Tactical</div>
+        <h1>Market Heat &amp; Fragility Score</h1>
+        <div class="subtitle">Validated v0.7 dashboard: structural heat, a smoother 12-month trend, source freshness, and historical drill-downs for every active indicator.</div>
+      </div>
+      <div class="mock-badge">VERSION 0.7 · PUBLIC DASHBOARD</div>
+    </div>
+    <div class="notice"><strong>Methodology unchanged from v0.6.</strong> The official Heat Score remains the raw monthly score; the 12-month moving average is a visual layer only. Anchor decisions on the last completed month.</div>
+    <div class="kpi-grid" id="kpis"></div>
+  </header>
+
+  <main class="section-grid">
+    <section class="card">
+      <div class="card-head"><div><h2>Current Reading</h2><div class="card-kicker">In-progress month is provisional</div></div><span class="pill watch">Risk context, not timing</span></div>
+      <div class="gauge-wrap">
+        <svg id="gauge" viewBox="0 0 260 170" role="img" aria-label="Current Heat Score gauge"></svg>
+        <div>
+          <div class="gauge-number" id="gaugeNumber">--</div>
+          <span class="pill" id="regimePill">--</span>
+          <div class="gauge-sub" id="gaugeSub"></div>
+          <div class="gauge-note"><strong>Decision anchor:</strong> use the last completed month. A high score means thin margin of safety; it does not forecast the exact market top.</div>
+        </div>
+      </div>
+      <div class="legend"><span><i class="dot" style="background:var(--cold)"></i>Cold &lt;30</span><span><i class="dot" style="background:var(--normal)"></i>Normal 30–60</span><span><i class="dot" style="background:var(--warm)"></i>Warm 60–75</span><span><i class="dot" style="background:var(--over)"></i>Overheated 75–85</span><span><i class="dot" style="background:var(--extreme)"></i>Extreme &gt;85</span></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h2>Pillar Breakdown</h2><div class="card-kicker">Score, 1-month change, and weighted contribution</div></div><span class="pill info">Click a pillar to explore</span></div>
+      <div class="pillar-head"><div>Pillar</div><div>Heat percentile</div><div>Score</div><div>1M Δ</div><div>Points</div></div>
+      <div class="pillar-list" id="pillarList"></div>
+    </section>
+
+    <section class="card full" id="heatHistoryCard">
+      <div class="card-head">
+        <div><h2>Heat Score — History</h2><div class="card-kicker">12M moving average is prominent; raw score stays visible and remains official</div></div>
+        <div class="control-row">
+          <button class="btn active" id="toggleMA" type="button">12M MA On</button>
+          <button class="btn active" id="toggleRaw" type="button">Raw On</button>
+          <span style="width:4px" aria-hidden="true"></span>
+          <button class="btn heat-range" data-years="5" type="button">5Y</button><button class="btn heat-range" data-years="10" type="button">10Y</button><button class="btn heat-range" data-years="20" type="button">20Y</button><button class="btn heat-range active" data-years="0" type="button">All</button>
+        </div>
+      </div>
+      <div class="chart-wrap" id="heatChartWrap"><svg class="chart" id="heatChart" role="img" aria-label="Heat Score historical chart"></svg><div class="tooltip" id="heatTooltip"></div></div>
+      <div class="chart-note"><div class="series-key"><span class="line-key"><i class="line-swatch ma"></i>12M moving average</span><span class="line-key"><i class="line-swatch raw"></i>Raw monthly score</span></div><div>MA12 reduces noise but can delay turning points.</div></div>
+    </section>
+
+    <section class="card full" id="explorerCard">
+      <div class="card-head">
+        <div><h2>Pillar &amp; Indicator History</h2><div class="card-kicker">Every underlying indicator can be inspected separately</div></div>
+        <div class="control-row">
+          <button class="btn explorer-mode active" data-mode="indicator" type="button">Indicators</button><button class="btn explorer-mode" data-mode="pillar" type="button">Pillars</button>
+          <select class="select" id="explorerSelect" aria-label="Select pillar or indicator"></select>
+          <button class="btn exp-range" data-years="5" type="button">5Y</button><button class="btn exp-range active" data-years="10" type="button">10Y</button><button class="btn exp-range" data-years="20" type="button">20Y</button><button class="btn exp-range" data-years="0" type="button">All</button>
+        </div>
+      </div>
+      <div class="explorer-top">
+        <div class="metric-box"><div class="big" id="metricRaw">--</div><div class="small" id="metricSource"></div><div class="why" id="metricWhy"></div></div>
+        <div class="metric-box"><div class="big" id="metricPct">--</div><div class="small" id="metricValid"></div><div class="why">Higher percentile always means “hotter” after direction adjustment.</div></div>
+      </div>
+      <div class="double-chart" id="indicatorCharts">
+        <div><div class="subchart-title" id="rawChartTitle">Raw history</div><div class="chart-wrap compact" id="rawChartWrap"><svg class="chart" id="rawChart" role="img" aria-label="Raw indicator or pillar history"></svg><div class="tooltip" id="rawTooltip"></div></div></div>
+        <div id="pctPanel"><div class="subchart-title">Heat percentile history</div><div class="chart-wrap compact" id="pctChartWrap"><svg class="chart" id="pctChart" role="img" aria-label="Indicator heat-percentile history"></svg><div class="tooltip" id="pctTooltip"></div></div></div>
+      </div>
+      <div class="chart-note"><div>Flat segments can indicate carried-forward inputs; the source-lag table below explains whether the cause is publication, operations, or licensing.</div><div id="explorerCompareNote"></div></div>
+    </section>
+
+    <section class="card full" id="tacticalCard">
+      <div class="card-head"><div><h2>Tactical 5% Asymmetry — Approx. 3-Month Context</h2><div class="card-kicker">63 forward-filled source rows; separate directional overlay, not part of the structural Heat Score</div></div><span class="pill info">Uncalibrated model scores</span></div>
+      <div class="tactical-disclosure"><strong>Read these as propensity scores, not literal probabilities.</strong> Purged validation preserves some ranking information, but private Brier and calibration diagnostics remain cautionary.</div>
+      <div class="tactical-grid">
+        <div class="tactical-summary">
+          <div class="metric-box"><div class="small">Rally propensity score</div><div class="big" id="rallyProb">--</div></div>
+          <div class="metric-box"><div class="small">Decline propensity score</div><div class="big" id="declineProb">--</div></div>
+          <div class="metric-box"><div class="small">Net asymmetry</div><div class="big" id="tacticalNet">--</div><div class="why" id="tacticalAuc"></div></div>
+        </div>
+        <div><div class="subchart-title">Feature contribution · left = downside / right = upside</div><div class="tactical-bars" id="tacticalBars"></div></div>
+      </div>
+      <div class="chart-note"><div>Scores are displayed on a 0–100 scale; net asymmetry is the score difference in points.</div><div>Private purged validation and calibration diagnostics update automatically but do not alter production output.</div></div>
+    </section>
+
+    <section class="card full">
+      <div class="card-head"><div><h2>Data Freshness &amp; Source-Lag Classification</h2><div class="card-kicker">Separates provider publication lag, operational delay, licensing constraints, stale data, and missing data</div></div><span class="pill watch" id="freshnessBadge">Source-age watch</span></div>
+      <div class="freshness-summary" id="freshnessSummary" aria-label="Source lag classification summary"></div>
+      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Used for</th><th>Latest stored observation</th><th>Delivery path</th><th>Lag classification</th></tr></thead><tbody id="freshnessBody"></tbody></table></div>
+      <div class="chart-note"><div>Classification uses declared source policy and stored observation age; it does not claim to probe each provider's live latest date.</div><div>Forward-filled values remain visible and are never presented as new observations.</div></div>
+    </section>
+
+    <section class="card full">
+      <div class="card-head"><div><h2>Planned FMP Expansion</h2><div class="card-kicker">Use FMP where it adds unique investment information—not merely as a duplicate of FRED</div></div><span class="pill info">Not yet included in score</span></div>
+      <div class="callouts">
+        <div class="callout"><div class="priority">Phase 1 · Highest priority</div><div class="callout-title">SPY vs RSP Breadth</div><p>Automated relative-performance and trend measures. This directly addresses market concentration with low implementation complexity.</p></div>
+        <div class="callout"><div class="priority">Phase 2 · After data test</div><div class="callout-title">% of S&amp;P 500 Above 200DMA</div><p>Use historical constituents plus daily prices. Add only after survivorship-bias, delisted-symbol, and history-coverage checks pass.</p></div>
+        <div class="callout"><div class="priority">Phase 3 · Conditional</div><div class="callout-title">Forward Valuation Breadth</div><p>Useful only if point-in-time estimate history is available. Do not backtest today’s revised consensus as if it were known historically.</p></div>
+      </div>
+    </section>
+
+    <section class="card full">
+      <div class="card-head"><div><h2>Methodology &amp; Validation Flags</h2><div class="card-kicker">Negative findings stay visible, not buried in documentation</div></div></div>
+      <div class="flag-grid">
+        <div class="flag"><div class="label">Comparable 5-pillar history</div><div class="value" id="comparableStart">From Jun 2009</div><div class="desc">Earlier score history uses a changing indicator set, mainly because NAAIM starts later.</div></div>
+        <div class="flag"><div class="label">Publication-lag integrity</div><div class="value">Lag causes disclosed</div><div class="desc">Provider delay, operational delay, and license delay are shown separately; observation dates are not availability dates.</div></div>
+        <div class="flag"><div class="label">Tactical validation</div><div class="value">Purged validation active</div><div class="desc">All five private folds remove 63 boundary training labels before the test interval.</div></div>
+        <div class="flag"><div class="label">Probability calibration</div><div class="value">Uncalibrated scores</div><div class="desc">AUC measures ranking; poor Brier/calibration diagnostics mean the displayed scores are not literal probabilities.</div></div>
+      </div>
+    </section>
+
+    <section class="card full">
+      <div class="card-head"><div><h2>Target Automatic Pipeline</h2><div class="card-kicker">Browser-managed, no local installation</div></div><span class="pill ok">Monthly + on-demand</span></div>
+      <div class="flow"><div class="flow-step"><strong>FRED + Public</strong><span>Macro, credit, volatility</span></div><div class="flow-step new"><strong>FMP API</strong><span>Breadth and price history</span></div><div class="flow-step"><strong>Fetch</strong><span>GitHub Actions secrets</span></div><div class="flow-step new"><strong>Validate</strong><span>Freshness, schema, gaps</span></div><div class="flow-step"><strong>Calculate</strong><span>Deterministic score</span></div><div class="flow-step"><strong>Publish</strong><span>Private repo / chosen host</span></div><div class="flow-step new"><strong>Alert</strong><span>Email / issue on failure</span></div></div>
+    </section>
+  </main>
+
+  <footer class="footer"><div>Validated dashboard bundle · commit <span id="commit"></span> · generated <span id="generatedAt"></span></div><div>Raw data should not be publicly redistributed unless licensing permits it.</div></footer>
+</div>
+<script src="v07_data.js"></script>
+<script src="v07_app.js"></script>
+</body>
+</html>
