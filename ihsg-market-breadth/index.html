@@ -1,1 +1,56 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IHSG Market Breadth</title><link rel="stylesheet" href="styles.css"></head><body><main id="app"><h1>IHSG Market Breadth</h1><p id="status">Loading latest aggregate breadth…</p><div id="content"></div></main><script src="data.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="IHSG Market Breadth daily aggregate dashboard">
+<title>IHSG Market Breadth</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+<header class="hero">
+<div><div class="eyebrow">Indonesia Equity Market Participation</div><h1>IHSG Market Breadth</h1><p class="subtitle">Daily aggregate MACD, moving-average, Supertrend and volume breadth.</p></div>
+<div class="top-actions"><button id="themeBtn" class="btn">Dark mode</button><a class="btn" href="https://github.com/Setyadi-House/ihsg-market-breadth" target="_blank" rel="noopener">Methodology repo</a></div>
+</header>
+<div id="staleBanner" class="banner"></div>
+<section class="kpis">
+<div class="kpi"><div class="label">MACD breadth</div><div class="value" id="kMacd">—</div><div class="sub" id="kMacdSub">—</div></div>
+<div class="kpi"><div class="label">MA100 breadth</div><div class="value" id="kMa">—</div><div class="sub" id="kMaSub">—</div></div>
+<div class="kpi"><div class="label">Supertrend</div><div class="value" id="kSt">—</div><div class="sub" id="kStSub">—</div></div>
+<div class="kpi"><div class="label">Composite</div><div class="value" id="kComp">—</div><div class="sub" id="kCompSub">—</div></div>
+<div class="kpi"><div class="label">Valid stocks</div><div class="value" id="kValid">—</div><div class="sub" id="kCoverage">—</div></div>
+<div class="kpi"><div class="label">Volume balance</div><div class="value" id="kVolBal">—</div><div class="sub">3-session smoothed</div></div>
+</section>
+
+<section class="card">
+<div class="card-head"><div><h2>Breadth overview</h2><p>EMA10 smoothed participation; raw observations remain available on hover.</p></div>
+<div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div></div>
+<div class="chart-wrap"><svg id="breadthChart" class="chart" viewBox="0 0 1100 360" preserveAspectRatio="none"></svg><div id="breadthTip" class="tooltip"></div></div>
+<div class="regime-key"><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
+</section>
+
+<section class="grid2">
+<section class="card"><div class="card-head"><div><h2>IHSG benchmark</h2><p>Unfiltered benchmark.</p></div><div class="controls"><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div></div><div class="chart-wrap small"><svg id="ihsgChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="ihsgTip" class="tooltip"></div></div></section>
+<section class="card"><div class="card-head"><div><h2>Volume participation</h2><p>Normalised activity and directional balance.</p></div></div><div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div></section>
+</section>
+
+<section class="grid2">
+<section class="card"><div class="card-head"><div><h2>Coverage</h2><p>Valid indicator observations divided by warmed target stocks.</p></div></div><div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 260" preserveAspectRatio="none"></svg><div id="coverageTip" class="tooltip"></div></div></section>
+<section class="card"><div class="card-head"><div><h2>How to read it</h2></div></div><div class="notes"><p><strong>&lt;30:</strong> weak participation. <strong>&gt;70:</strong> broad participation. Extremes can persist and are not automatic reversal signals.</p><p><strong>Volume balance:</strong> positive means abnormal activity is more concentrated in rising stocks; negative means more in falling stocks.</p><p><strong>Public display:</strong> aggregate-only output. Stock-level vendor data and credentials remain private.</p></div></section>
+</section>
+
+<section class="card"><div class="card-head"><div><h2>Methodology & data quality</h2></div></div><div class="facts">
+<div class="fact"><b>Market data as of</b><span id="fDate">—</span></div>
+<div class="fact"><b>Current provider roster</b><span id="fRoster">—</span></div>
+<div class="fact"><b>Latest raw-price coverage</b><span id="fPrice">—</span></div>
+<div class="fact"><b>Recent dated-cap coverage</b><span id="fCap">—</span></div>
+<div class="fact"><b>Sources</b><span id="fSources">—</span></div>
+<div class="fact"><b>Historical caveat</b><span id="fMethod">—</span></div>
+</div></section>
+<footer><span id="footerText"></span><a href="https://github.com/Setyadi-House/ihsg-market-breadth/releases/latest" target="_blank" rel="noopener">Full private interactive snapshot</a></footer>
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
