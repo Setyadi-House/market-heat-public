@@ -24,15 +24,20 @@
 </section>
 
 <section class="card">
-<div class="card-head"><div><h2>Breadth overview</h2><p>EMA10 smoothed participation; raw observations remain available on hover.</p></div>
-<div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div></div>
+<div class="card-head">
+<div><h2>Breadth overview</h2><p>EMA10 smoothed participation; raw observations remain available on hover.</p></div>
+<div>
+<div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div>
+<div class="controls" style="margin-top:8px"><span style="color:var(--muted);font-size:12px;align-self:center">History</span><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div>
+</div>
+</div>
 <div class="chart-wrap"><svg id="breadthChart" class="chart" viewBox="0 0 1100 360" preserveAspectRatio="none"></svg><div id="breadthTip" class="tooltip"></div></div>
 <div class="regime-key"><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
 </section>
 
 <section class="grid2">
-<section class="card"><div class="card-head"><div><h2>IHSG benchmark</h2><p>Unfiltered benchmark.</p></div><div class="controls"><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div></div><div class="chart-wrap small"><svg id="ihsgChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="ihsgTip" class="tooltip"></div></div></section>
-<section class="card"><div class="card-head"><div><h2>Volume participation</h2><p>Normalised activity and directional balance.</p></div></div><div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div></section>
+<section class="card"><div class="card-head"><div><h2>IHSG benchmark</h2><p>Uses the same selected history window.</p></div><div class="controls"><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div></div><div class="chart-wrap small"><svg id="ihsgChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="ihsgTip" class="tooltip"></div></div></section>
+<section class="card"><div class="card-head"><div><h2>Volume participation</h2><p>Normalised activity and directional balance over the selected history.</p></div></div><div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div></section>
 </section>
 
 <section class="grid2">
@@ -42,6 +47,7 @@
 
 <section class="card"><div class="card-head"><div><h2>Methodology & data quality</h2></div></div><div class="facts">
 <div class="fact"><b>Market data as of</b><span id="fDate">—</span></div>
+<div class="fact"><b>Breadth history available</b><span id="fHistory">—</span></div>
 <div class="fact"><b>Current provider roster</b><span id="fRoster">—</span></div>
 <div class="fact"><b>Latest raw-price coverage</b><span id="fPrice">—</span></div>
 <div class="fact"><b>Recent dated-cap coverage</b><span id="fCap">—</span></div>
