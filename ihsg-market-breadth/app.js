@@ -29,7 +29,7 @@ function mergeHistory(base,chunks){
     byDate.set(d,row);
   }));
   const dates=[...byDate.keys()].sort();
-  const out={meta:{...(base.meta||{}),history_start:dates[0],display_points:dates.length,
+  const out={meta:{...(base.meta||{}),market_as_of:dates[dates.length-1],history_start:dates[0],display_points:dates.length,
     history_note:'Complete available aggregate breadth history after the 350-observed-bar warmup.'},dates};
   series.forEach(k=>out[k]=dates.map(d=>Object.prototype.hasOwnProperty.call(byDate.get(d),k)?byDate.get(d)[k]:null));
   return out;
