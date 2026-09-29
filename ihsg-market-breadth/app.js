@@ -1,67 +1,97 @@
 (async()=>{'use strict';
-const base=window.IHSG_PUBLIC_DATA;
-const chunks=[...(window.IHSG_PUBLIC_CHUNKS||[])];
-async function loadPackedYear(year){
+const base=window.IHSG_PUBLIC_DATA||null;
+
+function parseChunk(js){
+  const m=js.match(/\.push\((.*)\);\s*$/s);
+  return m?JSON.parse(m[1]):null;
+}
+async function loadYear(year){
   try{
-    const res=await fetch('data-'+year+'.js.gz.b64',{cache:'no-store'});
-    if(!res.ok)return null;
-    const b64=(await res.text()).trim(),bin=atob(b64),bytes=new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
-    const buf=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-    const js=new TextDecoder().decode(buf);
-    const m=js.match(/\.push\((.*)\);\s*$/s);
-    return m?JSON.parse(m[1]):null;
-  }catch(e){console.warn('History chunk unavailable',year,e);return null;}
+    const r=await fetch('data-'+year+'.js.gz.b64',{cache:'no-store'});
+    if(r.ok){
+      const b64=(await r.text()).trim(),bin=atob(b64),bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      const buf=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+      return parseChunk(new TextDecoder().decode(buf));
+    }
+  }catch(e){}
+  try{
+    const r=await fetch('data-'+year+'.js',{cache:'no-store'});
+    if(r.ok)return parseChunk(await r.text());
+  }catch(e){}
+  return null;
 }
-for(const year of [2023,2024,2025,2026]){
-  const part=await loadPackedYear(year);
-  if(part)chunks.push(part);
+const finalYear=Number((base?.meta?.market_as_of||new Date().toISOString()).slice(0,4));
+const loaded=await Promise.all(Array.from({length:finalYear-1999},(_,i)=>loadYear(2000+i)));
+const chunks=loaded.filter(Boolean);
+if(base)chunks.push(base);
+if(!chunks.length){
+  const b=document.getElementById('staleBanner');b.textContent='Aggregate history could not be loaded.';b.className='banner show';return;
 }
-function mergeHistory(base,chunks){
-  if(!base)return null;
-  const inputs=[...chunks,base].filter(x=>x&&Array.isArray(x.dates));
+
+function mergeHistory(inputs){
   const series=new Set();
-  inputs.forEach(x=>Object.keys(x).forEach(k=>{if(k!=='meta'&&k!=='dates'&&Array.isArray(x[k]))series.add(k);}));
-  const byDate=new Map();
+  inputs.forEach(x=>Object.keys(x).forEach(k=>{if(k!=='meta'&&k!=='dates'&&Array.isArray(x[k]))series.add(k)}));
+  const map=new Map();
   inputs.forEach(x=>x.dates.forEach((d,i)=>{
-    const row=byDate.get(d)||{};
-    series.forEach(k=>{if(Array.isArray(x[k])&&i<x[k].length)row[k]=x[k][i];});
-    byDate.set(d,row);
+    const row=map.get(d)||{};
+    series.forEach(k=>{if(Array.isArray(x[k])&&i<x[k].length)row[k]=x[k][i]});
+    map.set(d,row);
   }));
-  const dates=[...byDate.keys()].sort();
-  const out={meta:{...(base.meta||{}),market_as_of:dates[dates.length-1],history_start:dates[0],display_points:dates.length,
-    history_note:'Complete available aggregate breadth history after the 350-observed-bar warmup.'},dates};
-  series.forEach(k=>out[k]=dates.map(d=>Object.prototype.hasOwnProperty.call(byDate.get(d),k)?byDate.get(d)[k]:null));
+  let dates=[...map.keys()].sort();
+  // A benchmark-only date with a warmed target but zero usable stock observations
+  // is not a valid breadth session. Drop it rather than plotting false 0% coverage.
+  dates=dates.filter(d=>{
+    const r=map.get(d),t=r.target,e=r.eligible,c=r.coverage;
+    return !(Number.isFinite(t)&&t>0&&e===0&&c===0);
+  });
+  const out={meta:{...(base?.meta||{})},dates};
+  series.forEach(k=>out[k]=dates.map(d=>Object.prototype.hasOwnProperty.call(map.get(d),k)?map.get(d)[k]:null));
+  out.meta.history_start=dates[0];
+  out.meta.market_as_of=dates[dates.length-1];
+  out.meta.display_points=dates.length;
+  out.meta.history_note='Complete available aggregate breadth history after observed-bar warmup; benchmark-only dates without a stock cross-section are excluded.';
   return out;
 }
-const D=mergeHistory(base,chunks);
-if(!D){const b=document.getElementById('staleBanner');b.textContent='Latest aggregate data are not available yet.';b.className='banner show';return;}
-const last=a=>a&&a.length?a[a.length-1]:null;
-const fmt=(v,d=1)=>Number.isFinite(v)?Number(v).toFixed(d):'—';
-const reg=v=>!Number.isFinite(v)?'Unavailable':v<30?'Low participation':v>70?'Broad participation':'Mixed participation';
-const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};
-set('kMacd',fmt(last(D.macd_smooth))+'%');set('kMacdSub',reg(last(D.macd_smooth)));
-set('kMa',fmt(last(D.ma_smooth))+'%');set('kMaSub',reg(last(D.ma_smooth)));
-set('kSt',fmt(last(D.st_smooth))+'%');set('kStSub',reg(last(D.st_smooth)));
-set('kComp',fmt(last(D.composite_smooth))+'%');set('kCompSub',reg(last(D.composite_smooth)));
-set('kValid',String(last(D.eligible)??'—'));set('kCoverage',fmt(last(D.coverage))+'% coverage');
-set('kVolBal',fmt(last(D.volume_balance_smooth)));
-set('fDate',D.meta.market_as_of);
-set('fHistory',(D.meta.history_start||D.dates[0])+' → '+D.meta.market_as_of+' ('+D.dates.length.toLocaleString()+' sessions)');
-set('fRoster',D.meta.universe_symbols+' stocks');set('fPrice',fmt(D.meta.price_coverage_pct,2)+'%');set('fCap',fmt(D.meta.cap_coverage_pct,2)+'%');
-set('fSources',D.meta.sources.join(' · '));set('fMethod',D.meta.methodology);
-set('footerText','Aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' breadth sessions');
-const age=Math.floor((Date.now()-new Date(D.meta.market_as_of+'T00:00:00Z'))/86400000);
-if(age>4){const b=document.getElementById('staleBanner');b.className='banner show';b.textContent='Data may be stale: last market observation is '+D.meta.market_as_of+'.';}
-const themeBtn=document.getElementById('themeBtn');
-if(localStorage.getItem('ihsg-theme')==='dark')document.body.classList.add('dark');
-function themeText(){themeBtn.textContent=document.body.classList.contains('dark')?'Light mode':'Dark mode'}themeText();
-themeBtn.addEventListener('click',()=>{document.body.classList.toggle('dark');localStorage.setItem('ihsg-theme',document.body.classList.contains('dark')?'dark':'light');themeText();drawAll();});
+const D=mergeHistory(chunks);
 
-function S(tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
-function cutoff(range){
+const last=a=>a&&a.length?a[a.length-1]:null;
+const finite=Number.isFinite;
+const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
+const reg=v=>!finite(v)?'Unavailable':v<30?'Low participation':v>70?'Broad participation':'Mixed participation';
+const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};
+
+let metric='macd';
+let benchMode='abs';
+let range=localStorage.getItem('ihsg-range')||'1Y';
+let smoothType=localStorage.getItem('ihsg-smooth-type')||'EMA';
+let smoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-smooth-n')||10)));
+let volMode=localStorage.getItem('ihsg-volume-mode')||'activity';
+let volSmoothType=localStorage.getItem('ihsg-vol-smooth-type')||'SMA';
+let volSmoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-vol-smooth-n')||3)));
+if(!['6M','1Y','3Y','5Y','ALL'].includes(range))range='1Y';
+if(!['EMA','SMA'].includes(smoothType))smoothType='EMA';
+if(!['EMA','SMA'].includes(volSmoothType))volSmoothType='SMA';
+if(!['activity','balance','spike'].includes(volMode))volMode='activity';
+
+function smoothing(a,n,type){
+  const out=Array(a.length).fill(null);
+  if(type==='EMA'){
+    const alpha=2/(n+1);let p=null;
+    a.forEach((v,i)=>{if(!finite(v)){p=null;return}p=p===null?v:alpha*v+(1-alpha)*p;out[i]=p});
+  }else{
+    let sum=0,count=0;
+    for(let i=0;i<a.length;i++){
+      if(finite(a[i])){sum+=a[i];count++}
+      if(i>=n&&finite(a[i-n])){sum-=a[i-n];count--}
+      if(i>=n-1&&count===n)out[i]=sum/n;
+    }
+  }
+  return out;
+}
+function cutoff(){
   if(range==='ALL')return D.dates[0];
-  const d=new Date(D.dates[D.dates.length-1]+'T12:00:00Z');
+  const d=new Date(D.dates.at(-1)+'T12:00:00Z');
   if(range==='6M')d.setUTCMonth(d.getUTCMonth()-6);
   else if(range==='1Y')d.setUTCFullYear(d.getUTCFullYear()-1);
   else if(range==='3Y')d.setUTCFullYear(d.getUTCFullYear()-3);
@@ -69,43 +99,125 @@ function cutoff(range){
   return d.toISOString().slice(0,10);
 }
 function startIndex(){
-  const key=cutoff(range);
-  let lo=0,hi=D.dates.length;
+  const key=cutoff();let lo=0,hi=D.dates.length;
   while(lo<hi){const m=(lo+hi)>>1;if(D.dates[m]<key)lo=m+1;else hi=m}
   return Math.min(lo,D.dates.length-1);
 }
-function view(values){return values.slice(startIndex())}
-function viewDates(){return D.dates.slice(startIndex())}
+function V(a){return a.slice(startIndex())}
+function VD(){return D.dates.slice(startIndex())}
+function S(tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
 
-function draw(id,dates,series,opt){
- const el=document.getElementById(id),W=1100,H=opt.h||300,p={l:52,r:16,t:14,b:28};el.replaceChildren();
- const all=[];series.forEach(s=>s.values.forEach(v=>{if(Number.isFinite(v))all.push(v)}));
- let lo=opt.min!=null?opt.min:Math.min(...all),hi=opt.max!=null?opt.max:Math.max(...all);
- if(!Number.isFinite(lo)||!Number.isFinite(hi)){lo=0;hi=1}if(lo===hi){lo-=1;hi+=1}const sp=hi-lo;
- const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1)),y=v=>p.t+(H-p.t-p.b)*(1-(v-lo)/sp);
- (opt.bands||[]).forEach(b=>el.appendChild(S('rect',{x:p.l,y:y(b.hi),width:W-p.l-p.r,height:Math.max(0,y(b.lo)-y(b.hi)),fill:b.fill,opacity:.10})));
- for(let q=0;q<=4;q++){const v=lo+sp*q/4,yy=y(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=opt.axis?opt.axis(v):fmt(v);el.appendChild(t)}
- const tickCount=dates.length>900?7:dates.length>400?6:dates.length>120?5:3;
- for(let k=0;k<tickCount;k++){const i=Math.round((dates.length-1)*k/Math.max(1,tickCount-1));const t=S('text',{x:x(i),y:H-6,'text-anchor':k===0?'start':k===tickCount-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)}
- series.forEach((srs,j)=>{let d='',on=false;srs.values.forEach((v,i)=>{if(Number.isFinite(v)){d+=(on?'L':'M')+x(i)+' '+y(v)+' ';on=true}else on=false});el.appendChild(S('path',{d,class:'line '+(srs.raw?'raw':''),stroke:srs.color||['#4b6bfb','#d9534f','#2ca36c'][j%3]}));});
- const ov=S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent'});el.appendChild(ov);
- const tip=document.getElementById(id.replace('Chart','Tip'));
- ov.addEventListener('mousemove',ev=>{const r=el.getBoundingClientRect(),px=(ev.clientX-r.left)/r.width*W,i=Math.max(0,Math.min(dates.length-1,Math.round((px-p.l)/(W-p.l-p.r)*(dates.length-1))));tip.style.display='block';tip.style.left=Math.min(r.width-220,ev.clientX-r.left+12)+'px';tip.style.top=(ev.clientY-r.top+8)+'px';const lines=[dates[i]];series.forEach(s=>lines.push(s.name+': '+(Number.isFinite(s.values[i])?(opt.tip?opt.tip(s.values[i]):fmt(s.values[i])):'—')));tip.textContent=lines.join(' | ');});
- ov.addEventListener('mouseleave',()=>tip.style.display='none');
+function ticksFor(dates){
+  const n=dates.length>1200?8:dates.length>700?7:dates.length>350?6:dates.length>150?5:3;
+  return Array.from({length:n},(_,k)=>Math.round((dates.length-1)*k/Math.max(1,n-1)));
 }
-let metric='macd',bench='abs',range=localStorage.getItem('ihsg-range')||'1Y';
-if(!['6M','1Y','3Y','5Y','ALL'].includes(range))range='1Y';
+function linePath(values,x,y){
+  let d='',on=false;
+  values.forEach((v,i)=>{if(finite(v)){d+=(on?'L':'M')+x(i)+' '+y(v)+' ';on=true}else on=false});
+  return d;
+}
 
-function breadth(){const dates=viewDates();draw('breadthChart',dates,[{name:'Smoothed',values:view(D[metric+'_smooth']),color:'#4b6bfb'},{name:'Raw',values:view(D[metric]),color:'#4b6bfb',raw:true}],{h:360,min:0,max:100,bands:[{lo:0,hi:30,fill:'#d9534f'},{lo:30,hi:70,fill:'#d9a620'},{lo:70,hi:100,fill:'#2ca36c'}],axis:v=>fmt(v,0),tip:v=>fmt(v)+'%'});}
-function ihsg(){const dates=viewDates(),vals=bench==='abs'?view(D.ihsg):view(D.ihsg_1y);draw('ihsgChart',dates,[{name:bench==='abs'?'IHSG':'1Y return',values:vals,color:'#4b6bfb'}],{tip:v=>bench==='abs'?fmt(v,0):fmt(v)+'%'});}
-function volume(){const dates=viewDates();draw('volumeChart',dates,[{name:'Activity index',values:view(D.volume_index_smooth),color:'#4b6bfb'},{name:'Directional balance',values:view(D.volume_balance_smooth),color:'#d9534f'}],{min:-100,max:160});}
-function coverage(){const dates=viewDates();draw('coverageChart',dates,[{name:'Coverage',values:view(D.coverage),color:'#2ca36c'}],{h:260,min:0,max:100,axis:v=>fmt(v,0),tip:v=>fmt(v)+'%'});}
-function drawAll(){breadth();ihsg();volume();coverage();}
-function syncRangeButtons(){document.querySelectorAll('.range').forEach(b=>b.classList.toggle('active',b.dataset.range===range));}
-syncRangeButtons();
-document.querySelectorAll('.metric').forEach(b=>b.addEventListener('click',()=>{metric=b.dataset.metric;document.querySelectorAll('.metric').forEach(x=>x.classList.toggle('active',x===b));breadth();}));
-document.querySelectorAll('.range').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;localStorage.setItem('ihsg-range',range);syncRangeButtons();drawAll();}));
-document.getElementById('absBtn').addEventListener('click',()=>{bench='abs';document.getElementById('absBtn').classList.add('active');document.getElementById('retBtn').classList.remove('active');ihsg();});
-document.getElementById('retBtn').addEventListener('click',()=>{bench='ret';document.getElementById('retBtn').classList.add('active');document.getElementById('absBtn').classList.remove('active');ihsg();});
-drawAll();
+function drawCombined(){
+  const el=document.getElementById('combinedChart'),tip=document.getElementById('combinedTip');
+  const dates=VD(),raw=V(D[metric]),smoothAll=smoothing(D[metric],smoothN,smoothType),smooth=V(smoothAll);
+  const bench=V(benchMode==='abs'?D.ihsg:D.ihsg_1y);
+  const W=1100,H=420,p={l:54,r:64,t:18,b:32};el.replaceChildren();
+  const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1));
+  const yL=v=>p.t+(H-p.t-p.b)*(1-v/100);
+  const bvals=bench.filter(finite);let blo=Math.min(...bvals),bhi=Math.max(...bvals);
+  if(!finite(blo)||!finite(bhi)){blo=0;bhi=1}if(blo===bhi){blo-=1;bhi+=1}
+  const pad=(bhi-blo)*.08||1;blo-=pad;bhi+=pad;
+  const yR=v=>p.t+(H-p.t-p.b)*(1-(v-blo)/(bhi-blo));
+  [[0,30,'#d9534f'],[30,70,'#d9a620'],[70,100,'#2ca36c']].forEach(([lo,hi,c])=>el.appendChild(S('rect',{x:p.l,y:yL(hi),width:W-p.l-p.r,height:yL(lo)-yL(hi),fill:c,opacity:.09})));
+  [0,25,50,75,100].forEach(v=>{const yy=yL(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=v;el.appendChild(t)});
+  for(let q=0;q<=4;q++){const v=blo+(bhi-blo)*q/4,yy=yR(v);const t=S('text',{x:W-p.r+8,y:yy+3,'text-anchor':'start',class:'axis benchmark-axis'});t.textContent=benchMode==='abs'?fmt(v,0):fmt(v,1)+'%';el.appendChild(t)}
+  ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
+  el.appendChild(S('path',{d:linePath(raw,x,yL),class:'line raw',stroke:'#8da5ff'}));
+  el.appendChild(S('path',{d:linePath(smooth,x,yL),class:'line',stroke:'#4b6bfb'}));
+  el.appendChild(S('path',{d:linePath(bench,x,yR),class:'line benchmark',stroke:'#c06b18'}));
+  const ov=S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent'});el.appendChild(ov);
+  ov.addEventListener('mousemove',ev=>{
+    const r=el.getBoundingClientRect(),px=(ev.clientX-r.left)/r.width*W,i=Math.max(0,Math.min(dates.length-1,Math.round((px-p.l)/(W-p.l-p.r)*(dates.length-1))));
+    tip.style.display='block';tip.style.left=Math.min(r.width-260,ev.clientX-r.left+12)+'px';tip.style.top=(ev.clientY-r.top+8)+'px';
+    tip.textContent=dates[i]+' | raw '+(finite(raw[i])?fmt(raw[i])+'%':'—')+' | '+smoothType+smoothN+' '+(finite(smooth[i])?fmt(smooth[i])+'%':'—')+' | IHSG '+(finite(bench[i])?(benchMode==='abs'?fmt(bench[i],0):fmt(bench[i])+'%'):'—');
+  });
+  ov.addEventListener('mouseleave',()=>tip.style.display='none');
+}
+
+function drawSingle(id,rawAll,smoothAll,opt){
+  const el=document.getElementById(id),tip=document.getElementById(id.replace('Chart','Tip')),dates=VD(),raw=V(rawAll),smooth=V(smoothAll);
+  const W=1100,H=300,p={l:52,r:18,t:16,b:30};el.replaceChildren();
+  let lo=opt.min,hi=opt.max;
+  if(lo==null||hi==null){const vals=[...raw,...smooth].filter(finite);lo=lo??Math.min(...vals);hi=hi??Math.max(...vals)}
+  if(!finite(lo)||!finite(hi)){lo=0;hi=1}if(lo===hi){lo-=1;hi+=1}
+  const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1)),y=v=>p.t+(H-p.t-p.b)*(1-(v-lo)/(hi-lo));
+  for(let q=0;q<=4;q++){const v=lo+(hi-lo)*q/4,yy=y(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=opt.axis?opt.axis(v):fmt(v);el.appendChild(t)}
+  if(finite(opt.ref)&&opt.ref>=lo&&opt.ref<=hi){el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:y(opt.ref),y2:y(opt.ref),class:'reference-line'}))}
+  ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
+  el.appendChild(S('path',{d:linePath(raw,x,y),class:'line raw',stroke:opt.color||'#8da5ff'}));
+  el.appendChild(S('path',{d:linePath(smooth,x,y),class:'line',stroke:opt.color||'#4b6bfb'}));
+  const ov=S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent'});el.appendChild(ov);
+  ov.addEventListener('mousemove',ev=>{const r=el.getBoundingClientRect(),px=(ev.clientX-r.left)/r.width*W,i=Math.max(0,Math.min(dates.length-1,Math.round((px-p.l)/(W-p.l-p.r)*(dates.length-1))));tip.style.display='block';tip.style.left=Math.min(r.width-220,ev.clientX-r.left+12)+'px';tip.style.top=(ev.clientY-r.top+8)+'px';tip.textContent=dates[i]+' | raw '+(finite(raw[i])?opt.tip(raw[i]):'—')+' | smoothed '+(finite(smooth[i])?opt.tip(smooth[i]):'—')});ov.addEventListener('mouseleave',()=>tip.style.display='none');
+}
+
+function volumeFields(){
+  if(volMode==='balance')return {raw:D.volume_balance,help:'Directional balance: +100 means abnormal volume is entirely on rising stocks, -100 entirely on falling stocks, 0 is balanced.',min:-100,max:100,ref:0,tip:v=>fmt(v,1),color:'#d9534f'};
+  if(volMode==='spike')return {raw:D.volume_spike,help:'High-volume breadth: percentage of valid stocks with RVOL ≥ 1.5× their own prior-20-observed-session average.',min:0,max:100,ref:25,tip:v=>fmt(v,1)+'%',color:'#8b5cf6'};
+  return {raw:D.volume_index,help:'Activity index: 100 = normal aggregate relative volume. Above 100 = above-normal activity; below 100 = below-normal.',min:0,max:null,ref:100,tip:v=>fmt(v,1),color:'#4b6bfb'};
+}
+function drawVolume(){
+  const f=volumeFields(),sm=smoothing(f.raw,volSmoothN,volSmoothType),vals=V(f.raw).filter(finite);
+  let max=f.max;if(max==null)max=Math.max(160,(vals.length?Math.max(...vals):160)*1.05);
+  document.getElementById('volumeHelp').textContent=f.help;
+  document.getElementById('volumeNote').textContent='Smoothing: '+volSmoothType+volSmoothN+'. Gaps mean source observations were unavailable; they are not filled with zero or interpolated.';
+  drawSingle('volumeChart',f.raw,sm,{min:f.min,max,ref:f.ref,tip:f.tip,color:f.color});
+}
+function drawCoverage(){
+  const cleaned=D.coverage.map((v,i)=>(D.target?.[i]>0&&D.eligible?.[i]===0)?null:v);
+  drawSingle('coverageChart',cleaned,cleaned,{min:0,max:100,ref:95,tip:v=>fmt(v,1)+'%',color:'#2ca36c'});
+}
+
+function updateKpis(){
+  const mb=smoothing(D.macd,smoothN,smoothType),ma=smoothing(D.ma,smoothN,smoothType),st=smoothing(D.st,smoothN,smoothType),cp=smoothing(D.composite,smoothN,smoothType);
+  set('kMacd',fmt(last(mb))+'%');set('kMacdSub',reg(last(mb)));
+  set('kMa',fmt(last(ma))+'%');set('kMaSub',reg(last(ma)));
+  set('kSt',fmt(last(st))+'%');set('kStSub',reg(last(st)));
+  set('kComp',fmt(last(cp))+'%');set('kCompSub',reg(last(cp)));
+  set('kValid',String(last(D.eligible)??'—'));set('kCoverage',fmt(last(D.coverage))+'% coverage');
+  const vb=smoothing(D.volume_balance,volSmoothN,volSmoothType);
+  set('kVolBal',fmt(last(vb)));set('kVolSub',volSmoothType+volSmoothN+' smoothed');
+}
+function updateFacts(){
+  set('fDate',D.meta.market_as_of);
+  set('fHistory',D.meta.history_start+' → '+D.meta.market_as_of+' ('+D.dates.length.toLocaleString()+' sessions)');
+  set('fRoster',(D.meta.universe_symbols||D.meta.symbols||'—')+' stocks');
+  set('fPrice',fmt(D.meta.price_coverage_pct??D.meta.last_price_coverage_pct,2)+'%');
+  set('fCap',fmt(D.meta.cap_coverage_pct??D.meta.last_cap_coverage_pct,2)+'%');
+  set('fSources',(D.meta.sources||[]).map(x=>typeof x==='string'?x:x.name).join(' · '));
+  set('fMethod',D.meta.methodology||D.meta.universe||'Current-roster retrospective breadth; survivorship bias applies.');
+  set('footerText','Aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' valid breadth sessions');
+}
+function drawAll(){drawCombined();drawVolume();drawCoverage();updateKpis()}
+
+const themeBtn=document.getElementById('themeBtn');
+if(localStorage.getItem('ihsg-theme')==='dark')document.body.classList.add('dark');
+function themeText(){themeBtn.textContent=document.body.classList.contains('dark')?'Light mode':'Dark mode'}themeText();
+themeBtn.onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('ihsg-theme',document.body.classList.contains('dark')?'dark':'light');themeText();drawAll()};
+
+document.getElementById('smoothType').value=smoothType;document.getElementById('smoothN').value=smoothN;
+document.getElementById('volSmoothType').value=volSmoothType;document.getElementById('volSmoothN').value=volSmoothN;
+document.querySelectorAll('.range').forEach(b=>b.classList.toggle('active',b.dataset.range===range));
+document.querySelectorAll('.volume-mode').forEach(b=>b.classList.toggle('active',b.dataset.volume===volMode));
+
+document.querySelectorAll('.metric').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;document.querySelectorAll('.metric').forEach(x=>x.classList.toggle('active',x===b));drawCombined()});
+document.querySelectorAll('.range').forEach(b=>b.onclick=()=>{range=b.dataset.range;localStorage.setItem('ihsg-range',range);document.querySelectorAll('.range').forEach(x=>x.classList.toggle('active',x===b));drawAll()});
+document.querySelectorAll('.volume-mode').forEach(b=>b.onclick=()=>{volMode=b.dataset.volume;localStorage.setItem('ihsg-volume-mode',volMode);document.querySelectorAll('.volume-mode').forEach(x=>x.classList.toggle('active',x===b));drawVolume()});
+document.getElementById('absBtn').onclick=()=>{benchMode='abs';document.getElementById('absBtn').classList.add('active');document.getElementById('retBtn').classList.remove('active');drawCombined()};
+document.getElementById('retBtn').onclick=()=>{benchMode='ret';document.getElementById('retBtn').classList.add('active');document.getElementById('absBtn').classList.remove('active');drawCombined()};
+document.getElementById('applySmooth').onclick=()=>{const n=Number(document.getElementById('smoothN').value),t=document.getElementById('smoothType').value;if(!Number.isInteger(n)||n<1||n>1260)return alert('Enter a smoothing length from 1 to 1260.');smoothN=n;smoothType=t;localStorage.setItem('ihsg-smooth-n',n);localStorage.setItem('ihsg-smooth-type',t);drawCombined();updateKpis()};
+document.getElementById('applyVolSmooth').onclick=()=>{const n=Number(document.getElementById('volSmoothN').value),t=document.getElementById('volSmoothType').value;if(!Number.isInteger(n)||n<1||n>1260)return alert('Enter a smoothing length from 1 to 1260.');volSmoothN=n;volSmoothType=t;localStorage.setItem('ihsg-vol-smooth-n',n);localStorage.setItem('ihsg-vol-smooth-type',t);drawVolume();updateKpis()};
+
+const age=Math.floor((Date.now()-new Date(D.meta.market_as_of+'T00:00:00Z'))/86400000);
+if(age>4){const b=document.getElementById('staleBanner');b.className='banner show';b.textContent='Data may be stale: last market observation is '+D.meta.market_as_of+'.';}
+updateFacts();drawAll();
 })();
