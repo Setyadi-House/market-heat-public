@@ -1,5 +1,40 @@
-(()=>{'use strict';
-const D=window.IHSG_PUBLIC_DATA;
+(async()=>{'use strict';
+const base=window.IHSG_PUBLIC_DATA;
+const chunks=[...(window.IHSG_PUBLIC_CHUNKS||[])];
+async function loadPackedYear(year){
+  try{
+    const res=await fetch('data-'+year+'.js.gz.b64',{cache:'no-store'});
+    if(!res.ok)return null;
+    const b64=(await res.text()).trim(),bin=atob(b64),bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const buf=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    const js=new TextDecoder().decode(buf);
+    const m=js.match(/\.push\((.*)\);\s*$/s);
+    return m?JSON.parse(m[1]):null;
+  }catch(e){console.warn('History chunk unavailable',year,e);return null;}
+}
+for(const year of [2023,2024,2025,2026]){
+  const part=await loadPackedYear(year);
+  if(part)chunks.push(part);
+}
+function mergeHistory(base,chunks){
+  if(!base)return null;
+  const inputs=[...chunks,base].filter(x=>x&&Array.isArray(x.dates));
+  const series=new Set();
+  inputs.forEach(x=>Object.keys(x).forEach(k=>{if(k!=='meta'&&k!=='dates'&&Array.isArray(x[k]))series.add(k);}));
+  const byDate=new Map();
+  inputs.forEach(x=>x.dates.forEach((d,i)=>{
+    const row=byDate.get(d)||{};
+    series.forEach(k=>{if(Array.isArray(x[k])&&i<x[k].length)row[k]=x[k][i];});
+    byDate.set(d,row);
+  }));
+  const dates=[...byDate.keys()].sort();
+  const out={meta:{...(base.meta||{}),history_start:dates[0],display_points:dates.length,
+    history_note:'Complete available aggregate breadth history after the 350-observed-bar warmup.'},dates};
+  series.forEach(k=>out[k]=dates.map(d=>Object.prototype.hasOwnProperty.call(byDate.get(d),k)?byDate.get(d)[k]:null));
+  return out;
+}
+const D=mergeHistory(base,chunks);
 if(!D){const b=document.getElementById('staleBanner');b.textContent='Latest aggregate data are not available yet.';b.className='banner show';return;}
 const last=a=>a&&a.length?a[a.length-1]:null;
 const fmt=(v,d=1)=>Number.isFinite(v)?Number(v).toFixed(d):'—';
