@@ -13,37 +13,58 @@
 <div><div class="eyebrow">Indonesia Equity Market Participation</div><h1>IHSG Market Breadth</h1><p class="subtitle">Daily aggregate MACD, moving-average, Supertrend and volume breadth.</p></div>
 <div class="top-actions"><button id="themeBtn" class="btn">Dark mode</button><a class="btn" href="https://github.com/Setyadi-House/ihsg-market-breadth" target="_blank" rel="noopener">Methodology repo</a></div>
 </header>
+
 <div id="staleBanner" class="banner"></div>
+
 <section class="kpis">
 <div class="kpi"><div class="label">MACD breadth</div><div class="value" id="kMacd">—</div><div class="sub" id="kMacdSub">—</div></div>
 <div class="kpi"><div class="label">MA100 breadth</div><div class="value" id="kMa">—</div><div class="sub" id="kMaSub">—</div></div>
 <div class="kpi"><div class="label">Supertrend</div><div class="value" id="kSt">—</div><div class="sub" id="kStSub">—</div></div>
 <div class="kpi"><div class="label">Composite</div><div class="value" id="kComp">—</div><div class="sub" id="kCompSub">—</div></div>
 <div class="kpi"><div class="label">Valid stocks</div><div class="value" id="kValid">—</div><div class="sub" id="kCoverage">—</div></div>
-<div class="kpi"><div class="label">Volume balance</div><div class="value" id="kVolBal">—</div><div class="sub">3-session smoothed</div></div>
+<div class="kpi"><div class="label">Volume balance</div><div class="value" id="kVolBal">—</div><div class="sub" id="kVolSub">—</div></div>
 </section>
 
 <section class="card">
 <div class="card-head">
-<div><h2>Breadth overview</h2><p>EMA10 smoothed participation; raw observations remain available on hover.</p></div>
-<div>
-<div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div>
-<div class="controls" style="margin-top:8px"><span style="color:var(--muted);font-size:12px;align-self:center">History</span><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div>
+  <div><h2>Breadth + IHSG</h2><p>Breadth uses the left 0–100 axis; IHSG uses the right axis so both move on the same timeline.</p></div>
+  <div class="control-stack">
+    <div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div>
+    <div class="controls"><span class="control-label">Smoothing</span><select id="smoothType" class="input"><option value="EMA" selected>EMA</option><option value="SMA">SMA</option></select><input id="smoothN" class="input number" type="number" min="1" max="1260" step="1" value="10"><button id="applySmooth" class="btn">Apply</button></div>
+    <div class="controls"><span class="control-label">IHSG</span><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div>
+    <div class="controls"><span class="control-label">History</span><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div>
+  </div>
 </div>
-</div>
-<div class="chart-wrap"><svg id="breadthChart" class="chart" viewBox="0 0 1100 360" preserveAspectRatio="none"></svg><div id="breadthTip" class="tooltip"></div></div>
-<div class="regime-key"><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
+<div class="chart-wrap tall"><svg id="combinedChart" class="chart" viewBox="0 0 1100 420" preserveAspectRatio="none"></svg><div id="combinedTip" class="tooltip"></div></div>
+<div class="legend-row"><span class="legend-chip breadth-line">Breadth smoothed</span><span class="legend-chip raw-line">Breadth raw</span><span class="legend-chip benchmark-line">IHSG</span><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
 </section>
 
 <section class="grid2">
-<section class="card"><div class="card-head"><div><h2>IHSG benchmark</h2><p>Uses the same selected history window.</p></div><div class="controls"><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div></div><div class="chart-wrap small"><svg id="ihsgChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="ihsgTip" class="tooltip"></div></div></section>
-<section class="card"><div class="card-head"><div><h2>Volume participation</h2><p>Normalised activity and directional balance over the selected history.</p></div></div><div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div></section>
+<section class="card">
+  <div class="card-head">
+    <div><h2>Volume participation</h2><p id="volumeHelp">Activity index: 100 means normal relative volume; above 100 means above-normal activity.</p></div>
+    <div class="control-stack">
+      <div class="controls"><button class="volume-mode active" data-volume="activity">Activity</button><button class="volume-mode" data-volume="balance">Directional balance</button><button class="volume-mode" data-volume="spike">High-volume breadth</button></div>
+      <div class="controls"><span class="control-label">Smoothing</span><select id="volSmoothType" class="input"><option value="SMA" selected>SMA</option><option value="EMA">EMA</option></select><input id="volSmoothN" class="input number" type="number" min="1" max="1260" step="1" value="3"><button id="applyVolSmooth" class="btn">Apply</button></div>
+    </div>
+  </div>
+  <div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div>
+  <p class="micro-note" id="volumeNote">Raw observations are never fabricated. Missing source sessions remain gaps.</p>
 </section>
 
-<section class="grid2">
-<section class="card"><div class="card-head"><div><h2>Coverage</h2><p>Valid indicator observations divided by warmed target stocks.</p></div></div><div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 260" preserveAspectRatio="none"></svg><div id="coverageTip" class="tooltip"></div></div></section>
-<section class="card"><div class="card-head"><div><h2>How to read it</h2></div></div><div class="notes"><p><strong>&lt;30:</strong> weak participation. <strong>&gt;70:</strong> broad participation. Extremes can persist and are not automatic reversal signals.</p><p><strong>Volume balance:</strong> positive means abnormal activity is more concentrated in rising stocks; negative means more in falling stocks.</p><p><strong>Public display:</strong> aggregate-only output. Stock-level vendor data and credentials remain private.</p></div></section>
+<section class="card">
+  <div class="card-head"><div><h2>Coverage</h2><p>Valid indicator observations / warmed target stocks. A missing whole-market source date is shown as a gap, not as 0%.</p></div></div>
+  <div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="coverageTip" class="tooltip"></div></div>
+  <p class="micro-note">Coverage below 95% means some eligible stocks lack a valid indicator observation. N/A means no usable stock cross-section existed for that date.</p>
 </section>
+</section>
+
+<section class="card"><div class="card-head"><div><h2>How to read it</h2></div></div><div class="notes">
+<p><strong>Breadth:</strong> &lt;30 = weak participation, 30–70 = mixed, &gt;70 = broad. Extremes can persist and are not automatic reversal signals.</p>
+<p><strong>Volume Activity:</strong> 100 = normal relative volume. 130 means aggregate activity is roughly 30% above normal after per-stock normalisation and capping.</p>
+<p><strong>Directional Balance:</strong> positive = abnormal volume is concentrated more in rising stocks; negative = more in falling stocks; 0 = balanced. This is not money flow.</p>
+<p><strong>High-volume breadth:</strong> percentage of valid stocks trading at least 1.5× their own prior-20-observed-session average volume.</p>
+</div></section>
 
 <section class="card"><div class="card-head"><div><h2>Methodology & data quality</h2></div></div><div class="facts">
 <div class="fact"><b>Market data as of</b><span id="fDate">—</span></div>
@@ -54,12 +75,9 @@
 <div class="fact"><b>Sources</b><span id="fSources">—</span></div>
 <div class="fact"><b>Historical caveat</b><span id="fMethod">—</span></div>
 </div></section>
+
 <footer><span id="footerText"></span><a href="https://github.com/Setyadi-House/ihsg-market-breadth/releases/latest" target="_blank" rel="noopener">Full private interactive snapshot</a></footer>
 </div>
-<script src="data-2019.js"></script>
-<script src="data-2020.js"></script>
-<script src="data-2021.js"></script>
-<script src="data-2022.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 </body>
