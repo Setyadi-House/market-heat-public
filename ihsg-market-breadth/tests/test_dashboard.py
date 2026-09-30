@@ -23,6 +23,8 @@ from playwright.sync_api import sync_playwright
 
 DASHBOARD = Path(__file__).resolve().parents[1]
 CHARTS = ("combinedChart", "volumeChart", "coverageChart")
+SPIKE_THRESHOLDS = ("0.5", "1", "1.25", "1.5", "1.75", "2", "2.5", "3", "4", "5")
+SPIKE_PERIODS = ("5", "10", "20", "50", "100", "200")
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -132,6 +134,54 @@ class DashboardTests(unittest.TestCase):
     def button(self, chart, action):
         return self.page.locator(f'.zoom-control[data-chart="{chart}"][data-zoom="{action}"]')
 
+    def pan_button(self, chart, direction):
+        return self.page.locator(f'.pan-control[data-chart="{chart}"][data-pan="{direction}"]')
+
+    def load_payload(self, payload, storage=None):
+        """Route aggregate fixtures locally; never change the shipped dataset."""
+        script = "window.IHSG_PUBLIC_DATA=" + json.dumps(payload, allow_nan=False) + ";"
+        self.page.unroute("**/data.js")
+        self.page.route("**/data.js", lambda route: route.fulfill(status=200, content_type="application/javascript", body=script))
+        if storage is not None:
+            self.page.evaluate("values => { localStorage.clear(); Object.entries(values).forEach(([key,value]) => localStorage.setItem(key,value)); }", storage)
+        self.page.reload(wait_until="load")
+        self.page.wait_for_function("!!window.__IHSG_TEST__")
+
+    def high_volume_fixture(self):
+        fixture = json.loads(json.dumps(self.payload))
+        periods = {}
+        for period_index, period in enumerate(SPIKE_PERIODS):
+            valid = [
+                int(fixture["volume_valid"][index] or 0) if period == "20" else
+                0 if index % 17 == 0 else min(eligible, 20 + int(period) // 5 + index % 7)
+                for index, eligible in enumerate(fixture["eligible"])
+            ]
+            counts = {}
+            for threshold_index, threshold in enumerate(SPIKE_THRESHOLDS):
+                hits = []
+                for index, denominator in enumerate(valid):
+                    if period == "20":
+                        baseline = fixture["volume_spike"][index]
+                        default_hits = round(denominator * baseline / 100) if baseline is not None else 0
+                        count = max(0, min(denominator, default_hits + (3 - threshold_index) * max(1, denominator // 15)))
+                    else:
+                        count = int(denominator * max(0, 10 - threshold_index - period_index + index % 3) / 14)
+                    hits.append(count)
+                counts[threshold] = hits
+            periods[period] = {"valid": valid, "counts": counts}
+        fixture["high_volume"] = {"schema_version": 1, "periods": periods}
+        return fixture
+
+    @staticmethod
+    def spike_reference(payload, threshold, period):
+        if threshold == "1.5" and period == "20":
+            return payload["volume_spike"]
+        observations = payload["high_volume"]["periods"][period]
+        return [
+            100 * count / valid if valid else None
+            for count, valid in zip(observations["counts"][threshold], observations["valid"])
+        ]
+
     def point(self, chart, fraction=.5, height=.5):
         """Map the actual SVG plot through its CTM, including letterboxing."""
         element = self.page.locator(f"#{chart} .plot-hit-area")
@@ -201,14 +251,14 @@ class DashboardTests(unittest.TestCase):
             path.mkdir(parents=True, exist_ok=True)
             self.page.screenshot(path=str(path / f"{name}.png"), full_page=True)
 
-    def assert_series(self, actual, expected):
+    def assert_series(self, actual, expected, tolerance=1e-8):
         self.assertEqual(len(actual), len(expected))
         for index, (got, wanted) in enumerate(zip(actual, expected)):
             if wanted is None:
                 self.assertIsNone(got, f"Missing observation was filled at {index}")
             else:
                 self.assertIsNotNone(got, f"Observation disappeared at {index}")
-                self.assertAlmostEqual(got, wanted, delta=1e-8, msg=f"Value changed at {index}")
+                self.assertAlmostEqual(got, wanted, delta=tolerance, msg=f"Value changed at {index}")
 
     def assert_slice(self, before, after):
         offset = after["start"] - before["start"]
@@ -247,6 +297,188 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(visible["end"], len(dates))
             self.assertEqual(int(self.page.locator(f"#{chart}").get_attribute("data-count")), len(dates))
         self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), data)
+
+    def test_real_high_volume_lookup_counts_align_and_preserve_default_series(self):
+        data = self.payload
+        self.assertIn("high_volume", data, "Configurable volume views require a validated aggregate lookup")
+        lookup = data["high_volume"]
+        self.assertEqual(set(lookup), {"schema_version", "periods"})
+        self.assertEqual(lookup["schema_version"], 1)
+        self.assertEqual(set(lookup["periods"]), set(SPIKE_PERIODS))
+        for period, observations in lookup["periods"].items():
+            self.assertEqual(set(observations), {"valid", "counts"})
+            valid = observations["valid"]
+            self.assertEqual(len(valid), len(data["dates"]))
+            self.assertTrue(all(type(count) is int and 0 <= count <= eligible for count, eligible in zip(valid, data["eligible"])))
+            self.assertEqual(set(observations["counts"]), set(SPIKE_THRESHOLDS))
+            previous = valid
+            for threshold in SPIKE_THRESHOLDS:
+                counts = observations["counts"][threshold]
+                self.assertEqual(len(counts), len(data["dates"]))
+                self.assertTrue(all(type(count) is int and 0 <= count <= denominator for count, denominator in zip(counts, valid)))
+                self.assertTrue(all(left >= right for left, right in zip(previous, counts)), "Higher RVOL thresholds gained stocks")
+                previous = counts
+            if period == "20":
+                self.assertEqual(valid, data["volume_valid"])
+                calculated = [100 * count / denominator if denominator else None for count, denominator in zip(observations["counts"]["1.5"], valid)]
+                self.assert_series(data["volume_spike"], calculated, tolerance=5.001e-7)
+
+    def test_high_volume_controls_cover_all_presets_and_preserve_selected_view(self):
+        fixture = self.high_volume_fixture()
+        self.load_payload(fixture)
+        self.history("ALL")
+        self.assertFalse(self.page.locator("#spikeSettings").is_visible())
+        self.page.locator('.volume-mode[data-volume="spike"]').click()
+        self.assertTrue(self.page.locator("#spikeSettings").is_visible())
+        self.assertEqual(self.page.locator("#spikeThreshold option").evaluate_all("elements => elements.map(el => el.value)"), list(SPIKE_THRESHOLDS))
+        self.assertEqual(self.page.locator("#spikePeriod option").evaluate_all("elements => elements.map(el => el.value)"), list(SPIKE_PERIODS))
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "1.5")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "20")
+        self.assertEqual(self.view("volumeChart")["raw"], self.payload["volume_spike"])
+        chosen = self.drag("volumeChart", .2, .7)
+        unchanged = {chart: self.view(chart) for chart in CHARTS if chart != "volumeChart"}
+        for threshold in SPIKE_THRESHOLDS:
+            self.page.locator("#spikeThreshold").select_option(threshold)
+            actual = self.view("volumeChart")
+            expected = self.spike_reference(fixture, threshold, "20")
+            self.assertEqual((actual["start"], actual["end"]), (chosen["start"], chosen["end"]))
+            self.assert_series(actual["raw"], expected[actual["start"] : actual["end"]])
+            self.assert_series(actual["smoothed"], moving_average(expected, 3, "SMA")[actual["start"] : actual["end"]])
+        self.page.locator("#spikeThreshold").select_option("2")
+        for period in SPIKE_PERIODS:
+            self.page.locator("#spikePeriod").select_option(period)
+            actual = self.view("volumeChart")
+            expected = self.spike_reference(fixture, "2", period)
+            self.assertEqual((actual["start"], actual["end"]), (chosen["start"], chosen["end"]))
+            self.assert_series(actual["raw"], expected[actual["start"] : actual["end"]])
+            self.assert_series(actual["smoothed"], moving_average(expected, 3, "SMA")[actual["start"] : actual["end"]])
+        for chart, original in unchanged.items():
+            self.assertEqual(self.view(chart), original)
+        self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), fixture)
+
+    def test_high_volume_smoothing_and_tooltips_use_selected_counts_and_baseline(self):
+        fixture = self.high_volume_fixture()
+        fraction_index = next(index for index, valid in enumerate(fixture["volume_valid"]) if valid >= 512)
+        fixture["high_volume"]["periods"]["50"]["valid"][fraction_index] = 512
+        for threshold, count in zip(SPIKE_THRESHOLDS, (2, 2, 2, 2, 2, 1, 1, 0, 0, 0)):
+            fixture["high_volume"]["periods"]["50"]["counts"][threshold][fraction_index] = count
+        self.load_payload(fixture)
+        self.history("ALL")
+        self.page.locator('.volume-mode[data-volume="spike"]').click()
+        self.page.locator("#spikeThreshold").select_option("2.5")
+        self.page.locator("#spikePeriod").select_option("50")
+        expected = self.spike_reference(fixture, "2.5", "50")
+        observations = fixture["high_volume"]["periods"]["50"]
+        for method in ("SMA", "EMA"):
+            with self.subTest(method=method):
+                self.page.locator("#volSmoothType").select_option(method)
+                self.page.locator("#volSmoothN").fill("5")
+                self.page.locator("#applyVolSmooth").click()
+                full = self.view("volumeChart")
+                reference = moving_average(expected, 5, method)
+                self.assert_series(full["raw"], expected)
+                self.assertEqual(full["raw"][fraction_index], .1953125, "A configurable percentage was rounded before smoothing")
+                self.assert_series(full["smoothed"], reference)
+                self.wheel("volumeChart")
+                zoomed = self.view("volumeChart")
+                self.assert_slice(full, zoomed)
+                self.pan_button("volumeChart", "left").click()
+                panned = self.view("volumeChart")
+                self.assert_series(panned["smoothed"], reference[panned["start"] : panned["end"]])
+                self.assert_domain_contains(self.domain("volumeChart"), panned["raw"] + panned["smoothed"])
+                self.button("volumeChart", "reset").click()
+        for index in (17 * 100, 17 * 100 + 1):
+            point = self.point("volumeChart", index / (len(expected) - 1))
+            self.page.mouse.move(point["x"], point["y"])
+            text = self.page.locator("#volumeTip").inner_text()
+            self.assertIn(fixture["dates"][index], text)
+            self.assertIn("2.5", text)
+            self.assertIn("50 observed", text)
+            self.assertIn(f'High-volume {observations["counts"]["2.5"][index]} / {observations["valid"][index]}', text)
+            if not observations["valid"][index]:
+                self.assertIsNone(self.view("volumeChart")["raw"][index])
+                self.assertIn("raw —", text)
+
+    def test_spike_options_storage_fallback_and_other_volume_modes_are_unchanged(self):
+        fixture = self.high_volume_fixture()
+        self.load_payload(fixture, {"ihsg-volume-mode": "spike", "ihsg-spike-threshold": "3", "ihsg-spike-period": "100"})
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "3")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "100")
+        self.history("ALL")
+        self.assert_series(self.view("volumeChart")["raw"], self.spike_reference(fixture, "3", "100"))
+        for mode, field, observed in (("activity", "volume_index", False), ("balance", "volume_balance", True)):
+            self.page.locator(f'.volume-mode[data-volume="{mode}"]').click()
+            self.assertFalse(self.page.locator("#spikeSettings").is_visible())
+            actual = self.view("volumeChart")
+            self.assertEqual(actual["raw"], fixture[field])
+            self.assert_series(actual["smoothed"], moving_average(fixture[field], 3, "SMA", observed=observed))
+        self.page.locator('.volume-mode[data-volume="spike"]').click()
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "3")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "100")
+        self.page.locator("#spikeThreshold").select_option("4")
+        self.page.locator("#spikePeriod").select_option("200")
+        self.assertEqual(self.page.evaluate("localStorage.getItem('ihsg-spike-threshold')"), "4")
+        self.assertEqual(self.page.evaluate("localStorage.getItem('ihsg-spike-period')"), "200")
+        self.page.reload(wait_until="load")
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "4")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "200")
+        self.load_payload(fixture, {"ihsg-volume-mode": "spike", "ihsg-spike-threshold": "0.7", "ihsg-spike-period": "7"})
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "1.5")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "20")
+        self.history("ALL")
+        self.assertEqual(self.view("volumeChart")["raw"], self.payload["volume_spike"])
+
+    def test_legacy_payload_keeps_default_view_and_disables_unavailable_options(self):
+        legacy = dict(self.payload)
+        legacy.pop("high_volume", None)
+        self.load_payload(legacy, {"ihsg-volume-mode": "spike", "ihsg-spike-threshold": "3", "ihsg-spike-period": "100"})
+        self.assertTrue(self.page.locator("#spikeThreshold").is_disabled())
+        self.assertTrue(self.page.locator("#spikePeriod").is_disabled())
+        self.assertEqual(self.page.locator("#spikeThreshold").input_value(), "1.5")
+        self.assertEqual(self.page.locator("#spikePeriod").input_value(), "20")
+        self.history("ALL")
+        self.assertEqual(self.view("volumeChart")["raw"], legacy["volume_spike"])
+        self.assertIn("validated aggregate data update", self.page.locator("#spikeSettingsNote").inner_text())
+
+    def test_malformed_high_volume_counts_are_rejected_before_chart_rendering(self):
+        for kind in ("out_of_bounds", "non_monotonic"):
+            with self.subTest(kind=kind):
+                fixture = self.high_volume_fixture()
+                observations = fixture["high_volume"]["periods"]["5"]
+                if kind == "out_of_bounds":
+                    observations["counts"]["2"][1] = observations["valid"][1] + 1
+                else:
+                    observations["counts"]["2"][1] = observations["counts"]["1.75"][1] + 1
+                script = "window.IHSG_PUBLIC_DATA=" + json.dumps(fixture, allow_nan=False) + ";"
+                self.page.unroute("**/data.js")
+                self.page.route("**/data.js", lambda route: route.fulfill(status=200, content_type="application/javascript", body=script))
+                self.page.reload(wait_until="load")
+                self.assertTrue(self.page.locator("#staleBanner").is_visible())
+                self.assertIn("alignment validation", self.page.locator("#staleBanner").inner_text())
+                self.assertFalse(self.page.evaluate("!!window.__IHSG_TEST__"))
+                self.assertEqual(self.page.locator("#combinedChart path").count(), 0)
+
+    def test_high_volume_controls_and_pan_buttons_fit_mobile_and_dark_theme(self):
+        self.load_payload(self.high_volume_fixture())
+        self.page.locator('.volume-mode[data-volume="spike"]').click()
+        for width in (320, 375, 768, 1440, 1920):
+            self.page.set_viewport_size({"width": width, "height": 900})
+            for dark in (False, True):
+                currently_dark = "dark" in (self.page.locator("body").get_attribute("class") or "")
+                if currently_dark != dark:
+                    self.page.locator("#themeBtn").click()
+                self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
+                for element in self.page.locator("#spikeSettings select, .pan-control, .zoom-reset").all():
+                    box = element.bounding_box()
+                    self.assertGreaterEqual(box["x"], 0)
+                    self.assertLessEqual(box["x"] + box["width"], width + 1)
+                self.screenshot(f"options-pan-{width}-{'dark' if dark else 'light'}")
+        self.page.locator("#volumeHelpBtn").click()
+        text = self.page.locator("#volumeHelpDialog").inner_text()
+        self.assertIn("selected", text.lower())
+        self.assertIn("20", text)
+        self.assertIn("Activity", text)
+        self.assertIn("Directional balance", text)
 
     def test_coverage_exact_counts_and_genuine_nonzero_dips(self):
         data = self.payload
@@ -361,6 +593,132 @@ class DashboardTests(unittest.TestCase):
                     self.wheel(chart)
                 self.history(preset)
                 self.assertEqual(self.counts(), counts)
+
+    def test_pan_buttons_shift_only_the_selected_window_by_twenty_percent(self):
+        self.history("ALL")
+        self.assertEqual(self.page.locator(".pan-control").count(), 6)
+        original = {chart: self.view(chart) for chart in CHARTS}
+        for chart in CHARTS:
+            with self.subTest(chart=chart):
+                self.assertTrue(self.pan_button(chart, "left").is_disabled())
+                self.assertTrue(self.pan_button(chart, "right").is_disabled())
+                selected = self.wheel(chart)
+                step = max(1, round(selected["count"] * .2))
+                self.pan_button(chart, "left").click()
+                earlier = self.view(chart)
+                self.assertEqual(earlier["count"], selected["count"])
+                self.assertEqual(earlier["start"], max(0, selected["start"] - step))
+                self.assertEqual(earlier["end"], earlier["start"] + earlier["count"])
+                self.assert_slice(original[chart], earlier)
+                self.assert_domain_contains(self.domain(chart), earlier["raw"] + earlier["smoothed"])
+                if chart == "combinedChart":
+                    self.assert_domain_contains(self.domain(chart, "benchmark"), earlier["benchmark"])
+                for other in CHARTS:
+                    if other != chart:
+                        self.assertEqual(self.view(other), original[other])
+                self.pan_button(chart, "right").click()
+                self.assertEqual(self.view(chart), selected)
+                self.button(chart, "reset").click()
+                self.assertEqual(self.view(chart), original[chart])
+
+    def test_pan_buttons_and_arrow_keys_use_available_history_and_keep_preset_size(self):
+        self.history("ALL")
+        available = {chart: self.view(chart) for chart in CHARTS}
+        for preset in ("6M", "ALL"):
+            self.history(preset)
+            base = {chart: self.view(chart) for chart in CHARTS}
+            for chart in CHARTS:
+                with self.subTest(preset=preset, chart=chart):
+                    selected = self.wheel(chart)
+                    if preset == "ALL":
+                        for _ in range(10):
+                            if self.pan_button(chart, "left").is_disabled():
+                                break
+                            self.pan_button(chart, "left").click()
+                    else:
+                        self.pan_button(chart, "left").click()
+                        self.pan_button(chart, "left").click()
+                    earlier = self.view(chart)
+                    if preset == "ALL":
+                        self.assertEqual(earlier["start"], 0)
+                        self.assertTrue(self.pan_button(chart, "left").is_disabled())
+                    else:
+                        self.assertLess(earlier["start"], base[chart]["start"], "The History preset blocked access to earlier available sessions")
+                        self.assertTrue(self.pan_button(chart, "left").is_enabled())
+                    self.assertEqual(earlier["count"], selected["count"])
+                    self.assert_slice(available[chart], earlier)
+                    self.page.locator(f"#{chart}").focus()
+                    self.page.keyboard.press("ArrowLeft")
+                    after_key = self.view(chart)
+                    self.assertEqual(after_key["start"], max(0, earlier["start"] - max(1, round(earlier["count"] * .2))))
+                    self.page.keyboard.press("ArrowRight")
+                    moved = self.view(chart)
+                    self.assertEqual(moved["start"], after_key["start"] + max(1, round(earlier["count"] * .2)))
+                    self.assertEqual(moved["count"], earlier["count"])
+                    for _ in range(10):
+                        if self.pan_button(chart, "right").is_disabled():
+                            break
+                        self.pan_button(chart, "right").click()
+                    later = self.view(chart)
+                    self.assertEqual(later["end"], base[chart]["end"])
+                    self.assertEqual(later["count"], selected["count"])
+                    self.assertTrue(self.pan_button(chart, "right").is_disabled())
+                    self.assert_slice(available[chart], later)
+                    self.page.locator(f"#{chart}").focus()
+                    self.page.keyboard.press("ArrowRight")
+                    self.assertEqual(self.view(chart), later)
+                    self.button(chart, "reset").click()
+                    self.assertEqual(self.view(chart), base[chart])
+                    self.assertEqual(self.pan_button(chart, "left").is_disabled(), preset == "ALL")
+                    self.assertTrue(self.pan_button(chart, "right").is_disabled())
+
+    def test_default_one_year_view_can_pan_earlier_without_zoom_and_reset_latest(self):
+        self.assertEqual(self.page.locator(".range.active").get_attribute("data-range"), "1Y")
+        latest = {chart: self.view(chart) for chart in CHARTS}
+        self.history("ALL")
+        available = {chart: self.view(chart) for chart in CHARTS}
+        self.history("1Y")
+        for chart in CHARTS:
+            with self.subTest(chart=chart):
+                self.assertTrue(self.pan_button(chart, "left").is_enabled())
+                self.assertTrue(self.pan_button(chart, "right").is_disabled())
+                self.assertTrue(self.button(chart, "reset").is_disabled())
+                self.pan_button(chart, "left").click()
+                earlier = self.view(chart)
+                self.assertEqual(earlier["count"], latest[chart]["count"])
+                self.assertEqual(earlier["start"], latest[chart]["start"] - max(1, round(earlier["count"] * .2)))
+                self.assert_slice(available[chart], earlier)
+                self.assert_domain_contains(self.domain(chart), earlier["raw"] + earlier["smoothed"])
+                self.assertTrue(self.pan_button(chart, "right").is_enabled())
+                self.assertTrue(self.button(chart, "reset").is_enabled())
+                for other in CHARTS:
+                    if other != chart:
+                        self.assertEqual(self.view(other), latest[other])
+                self.button(chart, "reset").click()
+                self.assertEqual(self.view(chart), latest[chart])
+                self.assertTrue(self.button(chart, "reset").is_disabled())
+
+    def test_minimum_window_pan_keeps_five_sessions_and_source_smoothing(self):
+        self.history("ALL")
+        for chart in CHARTS:
+            with self.subTest(chart=chart):
+                full = self.view(chart)
+                self.page.locator(f"#{chart}").focus()
+                for _ in range(20):
+                    self.page.keyboard.press("+")
+                before = self.view(chart)
+                self.assertEqual(before["count"], 5)
+                point = self.point(chart)
+                self.page.mouse.click(point["x"], point["y"])
+                self.page.keyboard.press("ArrowLeft")
+                after = self.view(chart)
+                self.assertEqual(after["start"], before["start"] - 1)
+                self.assertEqual(after["count"], 5)
+                self.assert_slice(full, after)
+                self.page.keyboard.press("ArrowRight")
+                self.assertEqual(self.view(chart), before)
+                self.page.keyboard.press("Home")
+                self.assertEqual(self.view(chart), full)
 
     def test_plain_and_ctrl_wheel_zoom_actual_plots_at_all_sizes(self):
         self.history("ALL")
@@ -768,6 +1126,10 @@ class DashboardTests(unittest.TestCase):
         for values in fixtures:
             with self.subTest(values=values):
                 fixture = dict(self.payload)
+                # This geometry fixture changes spike values independently.
+                # Use the supported legacy envelope instead of retaining a
+                # production lookup whose default counts would no longer match.
+                fixture.pop("high_volume", None)
                 for field, value in values.items():
                     fixture[field] = [value] * len(fixture["dates"])
                 script = "window.IHSG_PUBLIC_DATA=" + json.dumps(fixture, allow_nan=False) + ";"

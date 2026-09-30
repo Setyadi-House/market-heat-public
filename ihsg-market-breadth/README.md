@@ -28,6 +28,13 @@ zoom** button that restores the selected History range; choosing a new History
 range resets all three charts. Focus a chart to use the keyboard **+**, **−** and
 **Home** keys for zoom and reset.
 
+Use the earlier/later arrow buttons beside **Reset zoom** to move each chart's
+date window independently through the full available history. The window keeps
+its session count, so a 1Y view can move into earlier years without first zooming.
+The History preset sets the maximum window length; Reset returns to its latest
+period. Focused charts also accept **ArrowLeft** and **ArrowRight**. Buttons
+disable when the beginning or end of available history is reached.
+
 While zoomed, numerical axes fit the visible raw and smoothed observations, with
 padding and the metric's mathematical bounds. The IHSG axis uses its own visible
 values. Reset restores the original breadth, balance and percentage scales.
@@ -41,7 +48,20 @@ The **What do these mean?** popup explains all three volume views. Relative volu
 excluding today. Activity is 100 times the mean RVOL, with each RVOL capped at 5.
 Directional balance weights rising and falling stocks by that capped RVOL;
 unchanged stocks contribute to the denominator. High-volume breadth is the share
-of volume-valid stocks with RVOL at least 1.5.
+of volume-valid stocks meeting its selected RVOL threshold.
+
+High-volume breadth has a dedicated, responsive settings row with thresholds
+0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4 and 5× and baselines of 5, 10, 20, 50, 100
+or 200 prior observed volume bars. The default is unchanged at 1.5× and 20 bars.
+Selections update the chart immediately and persist locally, preserving its zoom.
+Today's volume is excluded from every baseline. Activity and Directional balance
+continue to use their original 20-bar baseline.
+
+The private pipeline calculates each setting's aggregate high-volume stock count
+and valid comparison count. The public chart derives `100 × count / valid`; it
+contains no per-stock RVOL values. Valid denominators can differ by baseline,
+and a zero denominator produces a gap. The popup explains the settings and the
+tooltip shows the selected parameters and counts.
 
 If all recorded volume weights are zero, Directional balance is undefined because
 its denominator is zero. Its raw value stays missing; Activity and high-volume
