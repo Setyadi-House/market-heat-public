@@ -157,7 +157,9 @@ class Review:
           const plot = [...el.querySelectorAll('rect')].find(x => x.getAttribute('fill') === 'transparent');
           const matrix = el.getScreenCTM();
           const point = new DOMPoint(+plot.getAttribute('x') + (end ? +plot.getAttribute('width') : 0), +plot.getAttribute('y') + 20).matrixTransform(matrix);
-          plot.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: point.x, clientY: point.y}));
+          // MouseEvent client coordinates are integer pixels. Round outward so a
+          // dense All timeline still exercises the exact first/last session clamp.
+          plot.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: end ? Math.ceil(point.x) : Math.floor(point.x), clientY: Math.round(point.y)}));
         }""", endpoint)
         text = page.locator(f"#{chart.replace('Chart', 'Tip')}").inner_text()
         self.check(f"{chart} exact tooltip {'last' if endpoint else 'first'} date", text.startswith(expected_date + " |"), text)
