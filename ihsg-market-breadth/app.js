@@ -18,15 +18,16 @@ const finite=Number.isFinite;
 const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
 const reg=v=>!finite(v)?'Unavailable':v<30?'Low participation':v>70?'Broad participation':'Mixed participation';
 const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};
+const restoredPeriod=(key,fallback)=>{const value=Number(localStorage.getItem(key));return Number.isInteger(value)&&value>=1&&value<=1260?value:fallback};
 
 let metric='macd';
 let benchMode='abs';
 let range=localStorage.getItem('ihsg-range')||'1Y';
 let smoothType=localStorage.getItem('ihsg-smooth-type')||'EMA';
-let smoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-smooth-n')||10)));
+let smoothN=restoredPeriod('ihsg-smooth-n',10);
 let volMode=localStorage.getItem('ihsg-volume-mode')||'activity';
 let volSmoothType=localStorage.getItem('ihsg-vol-smooth-type')||'SMA';
-let volSmoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-vol-smooth-n')||3)));
+let volSmoothN=restoredPeriod('ihsg-vol-smooth-n',3);
 if(!['6M','1Y','3Y','5Y','ALL'].includes(range))range='1Y';
 if(!['EMA','SMA'].includes(smoothType))smoothType='EMA';
 if(!['EMA','SMA'].includes(volSmoothType))volSmoothType='SMA';
@@ -65,8 +66,9 @@ function V(a){return a.slice(startIndex())}
 function VD(){return D.dates.slice(startIndex())}
 function S(tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
 
-function ticksFor(dates){
-  const n=dates.length>1200?8:dates.length>700?7:dates.length>350?6:dates.length>150?5:3;
+function ticksFor(dates,plotWidth){
+  const desired=dates.length>1200?8:dates.length>700?7:dates.length>350?6:dates.length>150?5:3;
+  const n=Math.min(dates.length,desired,Math.max(2,Math.floor(plotWidth/90)+1));
   return Array.from({length:n},(_,k)=>Math.round((dates.length-1)*k/Math.max(1,n-1)));
 }
 function linePath(values,x,y){
@@ -79,7 +81,8 @@ function drawCombined(){
   const el=document.getElementById('combinedChart'),tip=document.getElementById('combinedTip');
   const dates=VD(),raw=V(D[metric]),smoothAll=smoothing(D[metric],smoothN,smoothType),smooth=V(smoothAll);
   const bench=V(benchMode==='abs'?D.ihsg:D.ihsg_1y);
-  const W=1100,H=420,p={l:54,r:64,t:18,b:32};el.replaceChildren();
+  const W=el.getBoundingClientRect().width||1100,H=420,p={l:54,r:64,t:18,b:32};el.replaceChildren();
+  el.setAttribute('viewBox','0 0 '+W+' '+H);
   const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1));
   const yL=v=>p.t+(H-p.t-p.b)*(1-v/100);
   const bvals=bench.filter(finite);let blo=Math.min(...bvals),bhi=Math.max(...bvals);
@@ -89,7 +92,7 @@ function drawCombined(){
   [[0,30,'#d9534f'],[30,70,'#d9a620'],[70,100,'#2ca36c']].forEach(([lo,hi,c])=>el.appendChild(S('rect',{x:p.l,y:yL(hi),width:W-p.l-p.r,height:yL(lo)-yL(hi),fill:c,opacity:.09})));
   [0,25,50,75,100].forEach(v=>{const yy=yL(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=v;el.appendChild(t)});
   for(let q=0;q<=4;q++){const v=blo+(bhi-blo)*q/4,yy=yR(v);const t=S('text',{x:W-p.r+8,y:yy+3,'text-anchor':'start',class:'axis benchmark-axis'});t.textContent=benchMode==='abs'?fmt(v,0):fmt(v,1)+'%';el.appendChild(t)}
-  ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
+  ticksFor(dates,W-p.l-p.r).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
   el.appendChild(S('path',{d:linePath(raw,x,yL),class:'line raw',stroke:'#8da5ff'}));
   el.appendChild(S('path',{d:linePath(smooth,x,yL),class:'line',stroke:'#4b6bfb'}));
   el.appendChild(S('path',{d:linePath(bench,x,yR),class:'line benchmark',stroke:'#c06b18'}));
@@ -104,14 +107,15 @@ function drawCombined(){
 
 function drawSingle(id,rawAll,smoothAll,opt){
   const el=document.getElementById(id),tip=document.getElementById(id.replace('Chart','Tip')),dates=VD(),raw=V(rawAll),smooth=V(smoothAll);
-  const W=1100,H=300,p={l:52,r:18,t:16,b:30};el.replaceChildren();
+  const W=el.getBoundingClientRect().width||1100,H=300,p={l:52,r:18,t:16,b:30};el.replaceChildren();
+  el.setAttribute('viewBox','0 0 '+W+' '+H);
   let lo=opt.min,hi=opt.max;
   if(lo==null||hi==null){const vals=[...raw,...smooth].filter(finite);lo=lo??Math.min(...vals);hi=hi??Math.max(...vals)}
   if(!finite(lo)||!finite(hi)){lo=0;hi=1}if(lo===hi){lo-=1;hi+=1}
   const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1)),y=v=>p.t+(H-p.t-p.b)*(1-(v-lo)/(hi-lo));
   for(let q=0;q<=4;q++){const v=lo+(hi-lo)*q/4,yy=y(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=opt.axis?opt.axis(v):fmt(v);el.appendChild(t)}
   if(finite(opt.ref)&&opt.ref>=lo&&opt.ref<=hi){el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:y(opt.ref),y2:y(opt.ref),class:'reference-line'}))}
-  ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
+  ticksFor(dates,W-p.l-p.r).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dates[i].slice(0,7);el.appendChild(t)});
   el.appendChild(S('path',{d:linePath(raw,x,y),class:'line raw',stroke:opt.color||'#8da5ff'}));
   el.appendChild(S('path',{d:linePath(smooth,x,y),class:'line',stroke:opt.color||'#4b6bfb'}));
   const ov=S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent'});el.appendChild(ov);
@@ -156,6 +160,8 @@ function updateFacts(){
   set('footerText','Aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' valid breadth sessions');
 }
 function drawAll(){drawCombined();drawVolume();drawCoverage();updateKpis()}
+let resizeFrame;
+window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(drawAll)});
 
 const themeBtn=document.getElementById('themeBtn');
 if(localStorage.getItem('ihsg-theme')==='dark')document.body.classList.add('dark');
