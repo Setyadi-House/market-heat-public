@@ -28,12 +28,16 @@
 <section class="card">
 <div class="card-head">
   <div><h2>Breadth + IHSG</h2><p>Breadth uses the left 0–100 axis; IHSG uses the right axis so both move on the same timeline.</p></div>
-  <div class="control-stack">
-    <div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div>
-    <div class="controls"><span class="control-label">Smoothing</span><select id="smoothType" class="input"><option value="EMA" selected>EMA</option><option value="SMA">SMA</option></select><input id="smoothN" class="input number" type="number" min="1" max="1260" step="1" value="10"><button id="applySmooth" class="btn">Apply</button></div>
-    <div class="controls"><span class="control-label">IHSG</span><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div>
-    <div class="controls"><span class="control-label">History</span><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div>
-  </div>
+</div>
+<div class="chart-controls breadth-controls">
+  <div class="control-group" role="group" aria-labelledby="breadthControlLabel"><span id="breadthControlLabel" class="control-label">Breadth indicator</span><div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div></div>
+  <div class="control-group" role="group" aria-labelledby="smoothControlLabel"><span id="smoothControlLabel" class="control-label">Breadth smoothing</span><div class="controls"><select id="smoothType" class="input" aria-label="Breadth smoothing method"><option value="EMA" selected>EMA</option><option value="SMA">SMA</option></select><input id="smoothN" class="input number" type="number" min="1" max="1260" step="1" value="10" aria-label="Breadth smoothing sessions"><button id="applySmooth" class="btn">Apply</button></div></div>
+  <div class="control-group" role="group" aria-labelledby="benchmarkControlLabel"><span id="benchmarkControlLabel" class="control-label">IHSG comparison</span><div class="controls"><button id="absBtn" class="btn active">Absolute</button><button id="retBtn" class="btn">1Y return</button></div></div>
+  <div class="control-group" role="group" aria-labelledby="historyControlLabel"><span id="historyControlLabel" class="control-label">History · all charts</span><div class="controls"><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div></div>
+</div>
+<div class="chart-navigation">
+  <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Breadth chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="combinedChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="combinedChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="combinedChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="combinedChartRange" class="chart-range" aria-live="polite"></span></div>
+  <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
 </div>
 <div class="chart-wrap tall"><svg id="combinedChart" class="chart" viewBox="0 0 1100 420" preserveAspectRatio="none"></svg><div id="combinedTip" class="tooltip"></div></div>
 <div class="legend-row"><span class="legend-chip breadth-line">Breadth smoothed</span><span class="legend-chip raw-line">Breadth raw</span><span class="legend-chip benchmark-line">IHSG</span><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
@@ -43,19 +47,29 @@
 <section class="card">
   <div class="card-head">
     <div><h2>Volume participation</h2><p id="volumeHelp">Activity index: 100 means normal relative volume; above 100 means above-normal activity.</p></div>
-    <div class="control-stack">
-      <div class="controls"><button class="volume-mode active" data-volume="activity">Activity</button><button class="volume-mode" data-volume="balance">Directional balance</button><button class="volume-mode" data-volume="spike">High-volume breadth</button></div>
-      <div class="controls"><span class="control-label">Smoothing</span><select id="volSmoothType" class="input"><option value="SMA" selected>SMA</option><option value="EMA">EMA</option></select><input id="volSmoothN" class="input number" type="number" min="1" max="1260" step="1" value="3"><button id="applyVolSmooth" class="btn">Apply</button></div>
-    </div>
+  </div>
+  <div class="chart-controls volume-controls">
+    <div class="control-group" role="group" aria-labelledby="volumeControlLabel"><span id="volumeControlLabel" class="control-label">Volume view</span><div class="controls"><button class="volume-mode active" data-volume="activity">Activity</button><button class="volume-mode" data-volume="balance">Directional balance</button><button class="volume-mode" data-volume="spike">High-volume breadth</button></div></div>
+    <div class="control-group" role="group" aria-labelledby="volSmoothControlLabel"><span id="volSmoothControlLabel" class="control-label">Smoothing</span><div class="controls"><select id="volSmoothType" class="input" aria-label="Volume smoothing method"><option value="SMA" selected>SMA</option><option value="EMA">EMA</option></select><input id="volSmoothN" class="input number" type="number" min="1" max="1260" step="1" value="3" aria-label="Volume smoothing sessions"><button id="applyVolSmooth" class="btn">Apply</button></div></div>
+  </div>
+  <div class="chart-navigation">
+    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Volume chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="volumeChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="volumeChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="volumeChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="volumeChartRange" class="chart-range" aria-live="polite"></span></div>
+    <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
   </div>
   <div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div>
   <p class="micro-note" id="volumeNote">Raw observations are never fabricated. Missing source sessions remain gaps.</p>
 </section>
 
 <section class="card">
-  <div class="card-head"><div><h2>Coverage</h2><p>Valid indicator observations / warmed target stocks. A missing whole-market source date is shown as a gap, not as 0%.</p></div></div>
+  <div class="card-head"><div><h2>Coverage</h2><p>Usable indicator observations as a share of warmed target stocks.</p></div></div>
+  <div class="coverage-explanation"><p><strong>Coverage = valid stocks ÷ warmed target stocks × 100.</strong> Valid stocks have usable observations for all required breadth indicators on that date.</p><p>A dip means fewer stocks have usable indicators; it does not measure a market decline. Below 95% is a data-quality warning. If the whole market has no usable stock cross-section, that date is excluded rather than shown as 0%.</p></div>
+  <div class="chart-navigation">
+    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Coverage chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="coverageChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="coverageChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="coverageChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="coverageChartRange" class="chart-range" aria-live="polite"></span></div>
+    <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
+  </div>
   <div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="coverageTip" class="tooltip"></div></div>
-  <p class="micro-note">Coverage below 95% means some eligible stocks lack a valid indicator observation. N/A means no usable stock cross-section existed for that date.</p>
+  <p id="coverageStatus" class="micro-note" aria-live="polite"></p>
+  <p class="micro-note">The dashed line marks the 95% data-quality threshold. Coverage is separate from the direction of stock prices.</p>
 </section>
 </section>
 
