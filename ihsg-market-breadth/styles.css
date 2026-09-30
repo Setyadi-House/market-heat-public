@@ -68,6 +68,9 @@ h1 { font-size: 34px; line-height: 1.1; margin: 7px 0; }
 .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .card { padding: 16px; margin-bottom: 14px; min-width: 0; }
 .card-head { margin-bottom: 12px; }
+.card-head.with-help { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
+.card-head.with-help > div { flex: 1 1 220px; min-width: 0; }
+.help-button { flex: 0 0 auto; color: var(--accent); font-size: 12px; }
 .card h2 { font-size: 17px; margin: 0; }
 .card-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -97,14 +100,42 @@ h1 { font-size: 34px; line-height: 1.1; margin: 7px 0; }
 .zoom-reset { font-size: 12px; min-width: 56px; }
 .chart-range { color: var(--muted); font-size: 11px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .zoom-help { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.coverage-explanation { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 13px; }
-.coverage-explanation p { margin: 0 0 7px; }
-.coverage-explanation strong { color: var(--text); font-weight: 600; }
+
+.help-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 22px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 16px 60px #0005;
+  font-size: 14px;
+  line-height: 1.6;
+  overscroll-behavior: contain;
+}
+.help-dialog::backdrop { background: rgba(7, 14, 28, .65); }
+.dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: sticky; top: 0; padding-bottom: 8px; background: var(--panel); z-index: 1; }
+.dialog-header h2 { font-size: 19px; line-height: 1.3; margin: 0; }
+.dialog-header form { margin: 0; flex-shrink: 0; }
+.dialog-close { min-height: 36px; }
+.help-dialog p { margin: 12px 0; }
+.help-dialog h3 { font-size: 15px; margin: 0 0 5px; }
+.help-definition { border-top: 1px solid var(--line); margin: 16px 0 0; padding-top: 14px; }
+.help-definition p { margin: 5px 0 8px; }
+.help-baseline, .help-example { padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--control-bg); }
+.help-definitions { margin: 16px 0; }
+.help-definitions dt { font-weight: 700; margin: 14px 0 4px; }
+.help-definitions dd { margin: 0; }
+.help-dialog .help-caveat { color: var(--muted); font-size: 12px; }
 
 .chart-wrap { height: 360px; position: relative; min-width: 0; }
 .chart-wrap.small { height: 300px; }
 .chart-wrap.tall { height: 420px; }
 .chart { display: block; width: 100%; height: 100%; overflow: visible; touch-action: pan-y; }
+.chart:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 4px; }
 .axis { font-size: 10px; fill: var(--muted); }
 .gridline { stroke: var(--grid); stroke-width: 1; }
 .line { fill: none; stroke-width: 2.3; vector-effect: non-scaling-stroke; }
@@ -168,4 +199,6 @@ footer a { color: var(--accent); }
   .chart-controls { padding: 9px; }
   h1 { font-size: 30px; }
   .btn, .metric, .range, .volume-mode { padding-left: 8px; padding-right: 8px; }
+  .help-dialog { padding: 16px; }
+  .dialog-header h2 { font-size: 17px; }
 }
