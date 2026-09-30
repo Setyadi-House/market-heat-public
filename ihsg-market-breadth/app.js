@@ -1,60 +1,18 @@
-(async()=>{'use strict';
-const base=window.IHSG_PUBLIC_DATA||null;
-
-function parseChunk(js){
-  const m=js.match(/\.push\((.*)\);\s*$/s);
-  return m?JSON.parse(m[1]):null;
+(()=>{'use strict';
+const D=window.IHSG_PUBLIC_DATA||null;
+const banner=document.getElementById('staleBanner');
+if(!D||!Array.isArray(D.dates)||!D.dates.length){
+  banner.textContent='Validated aggregate history could not be loaded.';
+  banner.className='banner show';
+  return;
 }
-async function loadYear(year){
-  try{
-    const r=await fetch('data-'+year+'.js.gz.b64',{cache:'no-store'});
-    if(r.ok){
-      const b64=(await r.text()).trim(),bin=atob(b64),bytes=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
-      const buf=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-      return parseChunk(new TextDecoder().decode(buf));
-    }
-  }catch(e){}
-  try{
-    const r=await fetch('data-'+year+'.js',{cache:'no-store'});
-    if(r.ok)return parseChunk(await r.text());
-  }catch(e){}
-  return null;
+const n=D.dates.length;
+const aligned=Object.entries(D).filter(([k,v])=>k!=='meta'&&Array.isArray(v));
+if(aligned.some(([,v])=>v.length!==n)||D.meta?.display_points!==n){
+  banner.textContent='Aggregate payload failed alignment validation.';
+  banner.className='banner show';
+  return;
 }
-const finalYear=Number((base?.meta?.market_as_of||new Date().toISOString()).slice(0,4));
-const loaded=await Promise.all(Array.from({length:finalYear-1999},(_,i)=>loadYear(2000+i)));
-const chunks=loaded.filter(Boolean);
-if(base)chunks.push(base);
-if(!chunks.length){
-  const b=document.getElementById('staleBanner');b.textContent='Aggregate history could not be loaded.';b.className='banner show';return;
-}
-
-function mergeHistory(inputs){
-  const series=new Set();
-  inputs.forEach(x=>Object.keys(x).forEach(k=>{if(k!=='meta'&&k!=='dates'&&Array.isArray(x[k]))series.add(k)}));
-  const map=new Map();
-  inputs.forEach(x=>x.dates.forEach((d,i)=>{
-    const row=map.get(d)||{};
-    series.forEach(k=>{if(Array.isArray(x[k])&&i<x[k].length)row[k]=x[k][i]});
-    map.set(d,row);
-  }));
-  let dates=[...map.keys()].sort();
-  // A benchmark-only date with a warmed target but zero usable stock observations
-  // is not a valid breadth session. Drop it rather than plotting false 0% coverage.
-  dates=dates.filter(d=>{
-    const r=map.get(d),t=r.target,e=r.eligible,c=r.coverage;
-    return !(Number.isFinite(t)&&t>0&&e===0&&c===0);
-  });
-  const out={meta:{...(base?.meta||{})},dates};
-  series.forEach(k=>out[k]=dates.map(d=>Object.prototype.hasOwnProperty.call(map.get(d),k)?map.get(d)[k]:null));
-  out.meta.history_start=dates[0];
-  out.meta.market_as_of=dates[dates.length-1];
-  out.meta.display_points=dates.length;
-  out.meta.history_note='Complete available aggregate breadth history after observed-bar warmup; benchmark-only dates without a stock cross-section are excluded.';
-  return out;
-}
-const D=mergeHistory(chunks);
-
 const last=a=>a&&a.length?a[a.length-1]:null;
 const finite=Number.isFinite;
 const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
@@ -193,7 +151,7 @@ function updateFacts(){
   set('fRoster',(D.meta.universe_symbols||D.meta.symbols||'—')+' stocks');
   set('fPrice',fmt(D.meta.price_coverage_pct??D.meta.last_price_coverage_pct,2)+'%');
   set('fCap',fmt(D.meta.cap_coverage_pct??D.meta.last_cap_coverage_pct,2)+'%');
-  set('fSources',(D.meta.sources||[]).map(x=>typeof x==='string'?x:x.name).join(' · '));
+  set('fSources',D.meta.source_priority||((D.meta.sources||[]).map(x=>typeof x==='string'?x:x.name).join(' · '))||D.meta.benchmark_provider||'—');
   set('fMethod',D.meta.methodology||D.meta.universe||'Current-roster retrospective breadth; survivorship bias applies.');
   set('footerText','Aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' valid breadth sessions');
 }
