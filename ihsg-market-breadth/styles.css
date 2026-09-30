@@ -14,5 +14,6 @@
 .breadth-line{border-left:4px solid #4b6bfb}.raw-line{border-left:4px solid #8da5ff}.benchmark-line{border-left:4px solid #c06b18}
 .reference-line{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 5;opacity:.7}
 .benchmark-axis{font-weight:600}
+.axis{font-size:11px}
 .micro-note{font-size:11px;color:var(--muted);margin:8px 0 0}
 @media(max-width:900px){.control-stack{align-items:flex-start}.chart-wrap.tall{height:360px}}
