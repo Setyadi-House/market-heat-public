@@ -110,7 +110,7 @@ function startIndex(){
   return Math.min(lo,D.dates.length-1);
 }
 const chartIds=['combinedChart','volumeChart','coverageChart'];
-const views=new Map(),scenes=new Map();
+const views=new Map(),scenes=new Map(),interactionModes=new Map();
 function view(id){
   const base=startIndex();
   if(!views.has(id))views.set(id,{start:base,end:n});
@@ -125,24 +125,43 @@ function hideTip(id){const tip=document.getElementById(id.replace('Chart','Tip')
 function finishDrag(id){
   const scene=scenes.get(id);if(!scene?.drag)return;
   const el=document.getElementById(id),drag=scene.drag;
-  scene.drag=null;drag.selection.remove();
+  scene.drag=null;drag.selection?.remove();el.classList.remove('is-panning');
   if(el.hasPointerCapture?.(drag.pointerId))el.releasePointerCapture(drag.pointerId);
+}
+function syncInteractionMode(id){
+  const mode=interactionModes.get(id)||'pan',el=document.getElementById(id);
+  el.dataset.interactionMode=mode;
+  document.querySelectorAll('.box-zoom-control').forEach(button=>{
+    if(button.dataset.chart!==id)return;
+    button.setAttribute('aria-pressed',String(mode==='zoom'));
+    button.classList.toggle('active',mode==='zoom');
+  });
+}
+function bindBoxZoomControls(){
+  document.querySelectorAll('.box-zoom-control').forEach(button=>button.addEventListener('click',()=>{
+    const id=button.dataset.chart;if(!chartIds.includes(id))return;
+    finishDrag(id);hideTip(id);
+    interactionModes.set(id,(interactionModes.get(id)||'pan')==='pan'?'zoom':'pan');
+    syncInteractionMode(id);document.getElementById(id).focus({preventScroll:true});
+  }));
 }
 function resetViews(){chartIds.forEach(id=>{finishDrag(id);views.delete(id);hideTip(id)})}
 function redrawChart(id){if(id==='combinedChart')drawCombined();else if(id==='volumeChart')drawVolume();else if(id==='coverageChart')drawCoverage()}
 function setView(id,start,end){
   const base=startIndex(),minimum=Math.min(5,n-base),count=Math.max(minimum,Math.min(n-base,Math.round(end-start)));
   start=Math.max(0,Math.min(n-count,Math.round(start)));
+  const current=view(id);if(current.start===start&&current.end===start+count)return false;
   views.set(id,{start,end:start+count});redrawChart(id);
+  return true;
 }
-function zoom(id,direction,anchor=.5){
+function zoom(id,direction){
   const v=view(id),count=v.end-v.start,base=startIndex();
-  if(direction==='reset'){setView(id,base,n);return}
+  if(direction==='reset')return setView(id,base,n);
   const factor=direction==='in'?.5:direction==='out'?2:direction;
   const size=Math.max(Math.min(5,n-base),Math.min(n-base,Math.round(count*factor)));
-  if(size===count)return;
-  // Keep the pointed-at session in the same relative position after zooming.
-  setView(id,v.start+anchor*(count-1)-anchor*(size-1),v.start+anchor*(count-1)-anchor*(size-1)+size);
+  // Wheel and keyboard zoom always return to the newest available sessions.
+  // Box zoom is the separate way to inspect a selected historical period.
+  return setView(id,n-size,n);
 }
 function pan(id,direction){
   const v=view(id),count=v.end-v.start,step=Math.max(1,Math.round(count*.2));
@@ -158,9 +177,6 @@ function rangeStatus(id){
   document.querySelectorAll('.zoom-control').forEach(b=>{
     if(b.dataset.chart!==id)return;
     b.disabled=b.dataset.zoom==='in'?count<=Math.min(5,n-base):b.dataset.zoom==='reset'?v.start===base&&v.end===n:count===n-base;
-  });
-  document.querySelectorAll('.pan-control').forEach(b=>{
-    if(b.dataset.chart===id)b.disabled=b.dataset.pan==='left'?v.start===0:v.end===n;
   });
 }
 function geometry(el,scene,ev){
@@ -186,9 +202,15 @@ function showTip(id,ev){
   tip.style.top=Math.max(padding,Math.min(wrap.height-tip.offsetHeight-padding,top))+'px';
 }
 function registerScene(id,scene){
-  finishDrag(id);hideTip(id);
-  const el=document.getElementById(id),bound=scenes.get(id)?.bound;
-  scenes.set(id,{...scene,bound:true,drag:null,wheelDelta:0});rangeStatus(id);
+  hideTip(id);
+  const el=document.getElementById(id),previous=scenes.get(id),bound=previous?.bound;
+  // The SVG itself owns capture. Keep the gesture's original anchor while its
+  // series are redrawn so successive pan moves do not release capture or jump.
+  const drag=previous?.drag||null;
+  scenes.set(id,{...scene,bound:true,drag,wheelDelta:previous?.wheelDelta||0});
+  if(drag?.selection)el.appendChild(drag.selection);
+  el.classList.toggle('is-panning',drag?.mode==='pan');
+  rangeStatus(id);syncInteractionMode(id);
   el.dataset.yMin=String(scene.yDomain[0]);el.dataset.yMax=String(scene.yDomain[1]);
   el.dataset.autoScale=String(isZoomed(id));
   if(scene.benchmarkDomain){el.dataset.benchmarkMin=String(scene.benchmarkDomain[0]);el.dataset.benchmarkMax=String(scene.benchmarkDomain[1])}
@@ -200,29 +222,42 @@ function registerScene(id,scene){
     ev.preventDefault();
     el.focus({preventScroll:true});
     hideTip(id);
-    const selection=S('rect',{x:g.px,y:s.p.t,width:0,height:s.H-s.p.t-s.p.b,fill:'#4b6bfb','fill-opacity':'.16',stroke:'#4b6bfb','stroke-width':1,'pointer-events':'none',class:'zoom-selection'});
-    el.appendChild(selection);
-    s.drag={pointerId:ev.pointerId,start:g.fraction,clientX:ev.clientX,selection};
+    const mode=interactionModes.get(id)||'pan',v=view(id);
+    const selection=mode==='zoom'?S('rect',{x:g.px,y:g.py,width:0,height:0,class:'zoom-selection'}):null;
+    if(selection)el.appendChild(selection);
+    s.drag={pointerId:ev.pointerId,mode,start:g.fraction,startX:g.px,startY:g.py,clientX:ev.clientX,viewStart:v.start,count:v.end-v.start,plotWidth:s.W-s.p.l-s.p.r,selection};
+    el.classList.toggle('is-panning',mode==='pan');
     el.setPointerCapture?.(ev.pointerId);
   });
   el.addEventListener('pointermove',ev=>{
     const s=scenes.get(id),drag=s.drag;
-    if(!drag){showTip(id,ev);return}
+    if(!drag){if(ev.buttons)hideTip(id);else showTip(id,ev);return}
     if(ev.pointerId!==drag.pointerId)return;
-    const g=geometry(el,s,ev),left=Math.min(drag.start,g.fraction),width=Math.abs(drag.start-g.fraction);
-    drag.selection.setAttribute('x',s.p.l+left*(s.W-s.p.l-s.p.r));
-    drag.selection.setAttribute('width',width*(s.W-s.p.l-s.p.r));
+    ev.preventDefault();hideTip(id);
+    const g=geometry(el,s,ev);
+    if(drag.mode==='pan'){
+      const start=drag.viewStart-(g.px-drag.startX)*(drag.count-1)/drag.plotWidth;
+      setView(id,start,start+drag.count);return;
+    }
+    const x=Math.max(s.p.l,Math.min(s.W-s.p.r,g.px)),y=Math.max(s.p.t,Math.min(s.H-s.p.b,g.py));
+    drag.selection.setAttribute('x',Math.min(drag.startX,x));
+    drag.selection.setAttribute('y',Math.min(drag.startY,y));
+    drag.selection.setAttribute('width',Math.abs(drag.startX-x));
+    drag.selection.setAttribute('height',Math.abs(drag.startY-y));
   });
   el.addEventListener('pointerup',ev=>{
     const s=scenes.get(id),drag=s.drag;if(!drag||ev.pointerId!==drag.pointerId)return;
     const g=geometry(el,s,ev),v=view(id),length=v.end-v.start;
     const first=Math.round(Math.min(drag.start,g.fraction)*(length-1));
     const last=Math.round(Math.max(drag.start,g.fraction)*(length-1));
-    const selected=Math.abs(ev.clientX-drag.clientX)>=8;
+    const selected=drag.mode==='zoom'&&Math.abs(ev.clientX-drag.clientX)>=8;
     finishDrag(id);
-    if(selected)setView(id,v.start+first,v.start+last+1);else showTip(id,ev);
+    if(selected)setView(id,v.start+first,v.start+last+1);
   });
-  ['pointercancel','lostpointercapture'].forEach(type=>el.addEventListener(type,()=>{finishDrag(id);hideTip(id)}));
+  ['pointercancel','lostpointercapture'].forEach(type=>el.addEventListener(type,ev=>{
+    if(scenes.get(id)?.drag?.pointerId!==ev.pointerId)return;
+    finishDrag(id);hideTip(id);
+  }));
   el.addEventListener('pointerleave',()=>hideTip(id));
   el.addEventListener('wheel',ev=>{
     if(!ev.deltaY)return;
@@ -232,18 +267,19 @@ function registerScene(id,scene){
     const delta=ev.deltaY*(ev.deltaMode===1?16:ev.deltaMode===2?s.H:1);
     ev.preventDefault();finishDrag(id);
     const current=view(id),count=current.end-current.start,baseCount=n-startIndex();
-    if((delta<0&&count===Math.min(5,baseCount))||(delta>0&&count===baseCount)){s.wheelDelta=0;return}
+    if(current.end===n&&((delta<0&&count===Math.min(5,baseCount))||(delta>0&&count===baseCount))){s.wheelDelta=0;return}
     if(Math.sign(s.wheelDelta)!==Math.sign(delta))s.wheelDelta=0;
     // Keep sub-session movements until their combined delta changes the date
     // window. Otherwise tiny outward trackpad events could stay at five forever.
     s.wheelDelta+=delta;
-    zoom(id,Math.exp(Math.max(-.4,Math.min(.4,s.wheelDelta*.002))),g.fraction);
+    if(zoom(id,Math.exp(Math.max(-.4,Math.min(.4,s.wheelDelta*.002)))))scenes.get(id).wheelDelta=0;
   },{passive:false});
   el.addEventListener('keydown',ev=>{
     if(ev.key==='+'||ev.key==='='){ev.preventDefault();finishDrag(id);zoom(id,'in')}
     else if(ev.key==='-'){ev.preventDefault();finishDrag(id);zoom(id,'out')}
     else if(ev.key==='Home'){ev.preventDefault();finishDrag(id);zoom(id,'reset')}
     else if(ev.key==='ArrowLeft'||ev.key==='ArrowRight'){ev.preventDefault();pan(id,ev.key==='ArrowLeft'?'left':'right')}
+    else if(ev.key==='Escape'){ev.preventDefault();finishDrag(id);hideTip(id);interactionModes.set(id,'pan');syncInteractionMode(id)}
   });
 }
 function seriesGroup(el,id,W,H,p){
@@ -300,7 +336,7 @@ function drawCombined(){
   series.appendChild(S('path',{d:linePath(raw,x,yL),class:'line raw',stroke:'#8da5ff'}));
   series.appendChild(S('path',{d:linePath(smooth,x,yL),class:'line',stroke:'#4b6bfb'}));
   series.appendChild(S('path',{d:linePath(bench,x,yR),class:'line benchmark',stroke:'#c06b18'}));
-  el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area',style:'cursor:crosshair;touch-action:pan-y'}));
+  el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area'}));
   registerScene(id,{W,H,p,dates,raw,smoothed:smooth,benchmark:bench,yDomain:[lo,hi],benchmarkDomain:[blo,bhi],tooltip:i=>dates[i]+' | raw '+(finite(raw[i])?fmt(raw[i])+'%':'—')+' | '+smoothType+smoothN+' '+(finite(smooth[i])?fmt(smooth[i])+'%':'—')+' | IHSG '+(finite(bench[i])?(benchMode==='abs'?fmt(bench[i],0):fmt(bench[i])+'%'):'—')});
 }
 
@@ -318,7 +354,7 @@ function drawSingle(id,rawAll,smoothAll,opt){
   const series=seriesGroup(el,id,W,H,p);
   series.appendChild(S('path',{d:linePath(raw,x,y),class:'line raw',stroke:opt.color||'#8da5ff'}));
   series.appendChild(S('path',{d:linePath(smooth,x,y),class:'line',stroke:opt.color||'#4b6bfb'}));
-  el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area',style:'cursor:crosshair;touch-action:pan-y'}));
+  el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area'}));
   registerScene(id,{W,H,p,dates,raw,smoothed:smooth,yDomain:[lo,hi],tooltip:i=>opt.tooltip?opt.tooltip(i+view(id).start):dates[i]+' | raw '+(finite(raw[i])?opt.tip(raw[i]):'—')+' | smoothed '+(finite(smooth[i])?opt.tip(smooth[i]):'—')});
 }
 
@@ -401,7 +437,7 @@ document.querySelectorAll('.volume-mode').forEach(b=>b.classList.toggle('active'
 document.querySelectorAll('.metric').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;document.querySelectorAll('.metric').forEach(x=>x.classList.toggle('active',x===b));drawCombined()});
 document.querySelectorAll('.range').forEach(b=>b.onclick=()=>{range=b.dataset.range;localStorage.setItem('ihsg-range',range);document.querySelectorAll('.range').forEach(x=>x.classList.toggle('active',x===b));resetViews();drawAll()});
 document.querySelectorAll('.zoom-control').forEach(b=>b.addEventListener('click',()=>{if(chartIds.includes(b.dataset.chart)&&['in','out','reset'].includes(b.dataset.zoom))zoom(b.dataset.chart,b.dataset.zoom)}));
-document.querySelectorAll('.pan-control').forEach(b=>b.addEventListener('click',()=>{if(chartIds.includes(b.dataset.chart)&&['left','right'].includes(b.dataset.pan))pan(b.dataset.chart,b.dataset.pan)}));
+bindBoxZoomControls();
 document.querySelectorAll('.volume-mode').forEach(b=>b.onclick=()=>{volMode=b.dataset.volume;localStorage.setItem('ihsg-volume-mode',volMode);document.querySelectorAll('.volume-mode').forEach(x=>x.classList.toggle('active',x===b));drawVolume()});
 document.getElementById('spikeThreshold')?.addEventListener('change',ev=>{
   const selected=Number(ev.target.value);
