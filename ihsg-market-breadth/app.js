@@ -7,9 +7,35 @@ if(!D||!Array.isArray(D.dates)||!D.dates.length){
   return;
 }
 const n=D.dates.length;
+const spikeThresholds=[.5,1,1.25,1.5,1.75,2,2.5,3,4,5];
+const spikePeriods=[5,10,20,50,100,200];
 const aligned=Object.entries(D).filter(([k,v])=>k!=='meta'&&Array.isArray(v));
 if(aligned.some(([,v])=>v.length!==n)||D.meta?.display_points!==n){
   banner.textContent='Aggregate payload failed alignment validation.';
+  banner.className='banner show';
+  return;
+}
+const hasHighVolume=Object.hasOwn(D,'high_volume');
+function objectKeys(value,expected){return value!==null&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===expected.length&&expected.every(key=>Object.hasOwn(value,key))}
+function highVolumeAligned(){
+  const table=D.high_volume;
+  if(!objectKeys(table,['schema_version','periods'])||table.schema_version!==1||!objectKeys(table.periods,spikePeriods.map(String)))return false;
+  for(const period of spikePeriods){
+    const row=table.periods[period];
+    if(!objectKeys(row,['valid','counts'])||!Array.isArray(row.valid)||row.valid.length!==n||!objectKeys(row.counts,spikeThresholds.map(String)))return false;
+    if(row.valid.some((value,index)=>!Number.isInteger(value)||value<0||!Number.isInteger(D.eligible?.[index])||value>D.eligible[index]))return false;
+    let previous=row.valid;
+    for(const threshold of spikeThresholds){
+      const counts=row.counts[threshold];
+      if(!Array.isArray(counts)||counts.length!==n||counts.some((value,index)=>!Number.isInteger(value)||value<0||value>previous[index]))return false;
+      previous=counts;
+    }
+  }
+  const defaults=table.periods[20];
+  return defaults.valid.every((value,index)=>value===D.volume_valid?.[index]&&(value===0?D.volume_spike?.[index]===null:Number.isFinite(D.volume_spike?.[index])&&Math.abs(D.volume_spike[index]-100*defaults.counts['1.5'][index]/value)<=.0000005001));
+}
+if(hasHighVolume&&!highVolumeAligned()){
+  banner.textContent='High-volume aggregate data failed alignment validation.';
   banner.className='banner show';
   return;
 }
@@ -32,10 +58,15 @@ let smoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-smooth-n'
 let volMode=localStorage.getItem('ihsg-volume-mode')||'activity';
 let volSmoothType=localStorage.getItem('ihsg-vol-smooth-type')||'SMA';
 let volSmoothN=Math.max(1,Math.min(1260,Number(localStorage.getItem('ihsg-vol-smooth-n')||3)));
+let spikeThreshold=Number(localStorage.getItem('ihsg-spike-threshold')||1.5);
+let spikePeriod=Number(localStorage.getItem('ihsg-spike-period')||20);
 if(!['6M','1Y','3Y','5Y','ALL'].includes(range))range='1Y';
 if(!['EMA','SMA'].includes(smoothType))smoothType='EMA';
 if(!['EMA','SMA'].includes(volSmoothType))volSmoothType='SMA';
 if(!['activity','balance','spike'].includes(volMode))volMode='activity';
+if(!spikeThresholds.includes(spikeThreshold))spikeThreshold=1.5;
+if(!spikePeriods.includes(spikePeriod))spikePeriod=20;
+if(!hasHighVolume){spikeThreshold=1.5;spikePeriod=20}
 
 function smoothing(a,n,type){
   const out=Array(a.length).fill(null);
@@ -101,7 +132,7 @@ function resetViews(){chartIds.forEach(id=>{finishDrag(id);views.delete(id);hide
 function redrawChart(id){if(id==='combinedChart')drawCombined();else if(id==='volumeChart')drawVolume();else if(id==='coverageChart')drawCoverage()}
 function setView(id,start,end){
   const base=startIndex(),minimum=Math.min(5,n-base),count=Math.max(minimum,Math.min(n-base,Math.round(end-start)));
-  start=Math.max(base,Math.min(n-count,Math.round(start)));
+  start=Math.max(0,Math.min(n-count,Math.round(start)));
   views.set(id,{start,end:start+count});redrawChart(id);
 }
 function zoom(id,direction,anchor=.5){
@@ -113,6 +144,12 @@ function zoom(id,direction,anchor=.5){
   // Keep the pointed-at session in the same relative position after zooming.
   setView(id,v.start+anchor*(count-1)-anchor*(size-1),v.start+anchor*(count-1)-anchor*(size-1)+size);
 }
+function pan(id,direction){
+  const v=view(id),count=v.end-v.start,step=Math.max(1,Math.round(count*.2));
+  const start=Math.max(0,Math.min(n-count,v.start+(direction==='left'?-step:step)));
+  if(start===v.start)return;
+  finishDrag(id);setView(id,start,start+count);
+}
 function rangeStatus(id){
   const v=view(id),count=v.end-v.start,base=startIndex(),el=document.getElementById(id);
   el.dataset.start=String(v.start);el.dataset.end=String(v.end);el.dataset.count=String(count);
@@ -120,7 +157,10 @@ function rangeStatus(id){
   set(id+'Range',D.dates[v.start]+' → '+D.dates[v.end-1]+' · '+count.toLocaleString()+' sessions');
   document.querySelectorAll('.zoom-control').forEach(b=>{
     if(b.dataset.chart!==id)return;
-    b.disabled=b.dataset.zoom==='in'?count<=Math.min(5,n-base):count===n-base;
+    b.disabled=b.dataset.zoom==='in'?count<=Math.min(5,n-base):b.dataset.zoom==='reset'?v.start===base&&v.end===n:count===n-base;
+  });
+  document.querySelectorAll('.pan-control').forEach(b=>{
+    if(b.dataset.chart===id)b.disabled=b.dataset.pan==='left'?v.start===0:v.end===n;
   });
 }
 function geometry(el,scene,ev){
@@ -203,6 +243,7 @@ function registerScene(id,scene){
     if(ev.key==='+'||ev.key==='='){ev.preventDefault();finishDrag(id);zoom(id,'in')}
     else if(ev.key==='-'){ev.preventDefault();finishDrag(id);zoom(id,'out')}
     else if(ev.key==='Home'){ev.preventDefault();finishDrag(id);zoom(id,'reset')}
+    else if(ev.key==='ArrowLeft'||ev.key==='ArrowRight'){ev.preventDefault();pan(id,ev.key==='ArrowLeft'?'left':'right')}
   });
 }
 function seriesGroup(el,id,W,H,p){
@@ -281,19 +322,38 @@ function drawSingle(id,rawAll,smoothAll,opt){
   registerScene(id,{W,H,p,dates,raw,smoothed:smooth,yDomain:[lo,hi],tooltip:i=>opt.tooltip?opt.tooltip(i+view(id).start):dates[i]+' | raw '+(finite(raw[i])?opt.tip(raw[i]):'—')+' | smoothed '+(finite(smooth[i])?opt.tip(smooth[i]):'—')});
 }
 
+function highVolumeSelection(){
+  const row=hasHighVolume?D.high_volume.periods[spikePeriod]:null;
+  const valid=row?.valid||D.volume_valid,hits=row?.counts[spikeThreshold]||null;
+  const raw=spikePeriod===20&&spikeThreshold===1.5?D.volume_spike:valid.map((count,index)=>count>0?100*hits[index]/count:null);
+  return {raw,valid,hits,threshold:spikeThreshold,period:spikePeriod};
+}
+function syncSpikeSettings(){
+  const group=document.getElementById('spikeSettings'),threshold=document.getElementById('spikeThreshold'),period=document.getElementById('spikePeriod');
+  if(group)group.hidden=volMode!=='spike';
+  if(threshold){threshold.value=String(spikeThreshold);threshold.disabled=!hasHighVolume}
+  if(period){period.value=String(spikePeriod);period.disabled=!hasHighVolume}
+  set('spikeSettingsNote',hasHighVolume?'Updates high-volume breadth immediately. Activity and Directional balance keep their prior-20-bar baseline.':'Default 1.5× / 20 bars is available. Configurable options await a validated aggregate data update.');
+}
 function volumeFields(){
   if(volMode==='balance')return {raw:D.volume_balance,help:'Relative-volume-weighted balance: positive favours rising stocks; negative favours falling stocks.',min:-100,max:100,ref:0,tip:v=>fmt(v,1),color:'#d9534f'};
-  if(volMode==='spike')return {raw:D.volume_spike,help:'High-volume breadth: percentage of valid stocks with RVOL ≥ 1.5× their own prior-20-observed-session average.',min:0,max:100,ref:25,tip:v=>fmt(v,1)+'%',color:'#8b5cf6'};
+  if(volMode==='spike'){
+    const criterion=highVolumeSelection();
+    return {raw:criterion.raw,criterion,help:'High-volume breadth: percentage of volume-valid stocks with RVOL ≥ '+criterion.threshold+'×, using the prior '+criterion.period+' observed volume bars.',min:0,max:100,ref:25,tip:v=>fmt(v,1)+'%',color:'#8b5cf6'};
+  }
   return {raw:D.volume_index,help:'Activity index: 100 = normal aggregate relative volume. Above 100 = above-normal activity; below 100 = below-normal.',min:0,max:null,ref:100,tip:v=>fmt(v,1),color:'#4b6bfb'};
 }
 function balanceSmoothingLabel(){return volSmoothType+volSmoothN+(volSmoothType==='EMA'?' valid-observation span':' valid observations')}
 function drawVolume(){
+  syncSpikeSettings();
   const f=volumeFields(),sm=volMode==='balance'?observedSmoothing(f.raw,volSmoothN,volSmoothType):smoothing(f.raw,volSmoothN,volSmoothType),vals=[...V(f.raw,'volumeChart'),...V(sm,'volumeChart')].filter(finite);
   let max=f.max;if(max==null)max=Math.max(160,(vals.length?Math.max(...vals):160)*1.05);
   document.getElementById('volumeHelp').textContent=f.help;
   const label=volMode==='balance'?balanceSmoothingLabel():volSmoothType+volSmoothN+' sessions';
-  document.getElementById('volumeNote').textContent='Smoothing: '+label+'. '+(volMode==='balance'?'Undefined balance dates stay blank; smoothing resumes at the next valid observation.':'Missing source observations stay blank and are not filled with zero.');
-  drawSingle('volumeChart',f.raw,sm,{min:f.min,max,domainMin:f.min,domainMax:volMode==='activity'?500:f.max,ref:f.ref,tip:f.tip,color:f.color,tooltip:i=>D.dates[i]+' | raw '+(finite(f.raw[i])?f.tip(f.raw[i]):'—')+' | '+label+' '+(finite(sm[i])?f.tip(sm[i]):'—')+(!finite(f.raw[i])&&volMode==='balance'?(D.volume_valid?.[i]>0&&D.volume_index?.[i]===0?' | No directional reading: all valid relative-volume weights are zero.':' | No usable directional observation.'):'')});
+  const criterion=f.criterion,visibleLast=view('volumeChart').end-1;
+  const criterionText=criterion?' RVOL ≥ '+criterion.threshold+'×; prior '+criterion.period+' observed volume bars.'+(criterion.hits?' Last visible session: '+criterion.hits[visibleLast]+' high-volume / '+criterion.valid[visibleLast]+' volume-valid stocks.':''):'';
+  document.getElementById('volumeNote').textContent='Smoothing: '+label+'. '+(volMode==='balance'?'Undefined balance dates stay blank; smoothing resumes at the next valid observation.':'Unavailable volume comparisons stay blank and are not filled with zero.')+criterionText;
+  drawSingle('volumeChart',f.raw,sm,{min:f.min,max,domainMin:f.min,domainMax:volMode==='activity'?500:f.max,ref:f.ref,tip:f.tip,color:f.color,tooltip:i=>D.dates[i]+' | raw '+(finite(f.raw[i])?f.tip(f.raw[i]):'—')+' | '+label+' '+(finite(sm[i])?f.tip(sm[i]):'—')+(criterion?' | RVOL ≥ '+criterion.threshold+'× prior '+criterion.period+' observed bars'+(criterion.hits?' | High-volume '+criterion.hits[i]+' / '+criterion.valid[i]+' volume-valid stocks.':' | Volume-valid stocks '+(criterion.valid?.[i]??'—')):'')+(!finite(f.raw[i])&&volMode==='balance'?(D.volume_valid?.[i]>0&&D.volume_index?.[i]===0?' | No directional reading: all valid relative-volume weights are zero.':' | No usable directional observation.'):'')});
 }
 function drawCoverage(){
   drawSingle('coverageChart',coverageValues,coverageValues,{min:0,max:100,domainMin:0,domainMax:100,minSpan:.1,ref:95,tip:v=>fmt(v,1)+'%',color:'#2ca36c',tooltip:i=>D.dates[i]+' | Coverage '+(finite(coverageValues[i])?fmt(coverageValues[i],2)+'%':'N/A')+' | Valid '+(D.eligible?.[i]??'—')+' / target '+(D.target?.[i]??'—')+(finite(coverageValues[i])&&coverageValues[i]<95?' | Incomplete observations; not a market decline.':'')});
@@ -341,7 +401,18 @@ document.querySelectorAll('.volume-mode').forEach(b=>b.classList.toggle('active'
 document.querySelectorAll('.metric').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;document.querySelectorAll('.metric').forEach(x=>x.classList.toggle('active',x===b));drawCombined()});
 document.querySelectorAll('.range').forEach(b=>b.onclick=()=>{range=b.dataset.range;localStorage.setItem('ihsg-range',range);document.querySelectorAll('.range').forEach(x=>x.classList.toggle('active',x===b));resetViews();drawAll()});
 document.querySelectorAll('.zoom-control').forEach(b=>b.addEventListener('click',()=>{if(chartIds.includes(b.dataset.chart)&&['in','out','reset'].includes(b.dataset.zoom))zoom(b.dataset.chart,b.dataset.zoom)}));
+document.querySelectorAll('.pan-control').forEach(b=>b.addEventListener('click',()=>{if(chartIds.includes(b.dataset.chart)&&['left','right'].includes(b.dataset.pan))pan(b.dataset.chart,b.dataset.pan)}));
 document.querySelectorAll('.volume-mode').forEach(b=>b.onclick=()=>{volMode=b.dataset.volume;localStorage.setItem('ihsg-volume-mode',volMode);document.querySelectorAll('.volume-mode').forEach(x=>x.classList.toggle('active',x===b));drawVolume()});
+document.getElementById('spikeThreshold')?.addEventListener('change',ev=>{
+  const selected=Number(ev.target.value);
+  if(!hasHighVolume||!spikeThresholds.includes(selected)){syncSpikeSettings();return}
+  spikeThreshold=selected;localStorage.setItem('ihsg-spike-threshold',selected);drawVolume();
+});
+document.getElementById('spikePeriod')?.addEventListener('change',ev=>{
+  const selected=Number(ev.target.value);
+  if(!hasHighVolume||!spikePeriods.includes(selected)){syncSpikeSettings();return}
+  spikePeriod=selected;localStorage.setItem('ihsg-spike-period',selected);drawVolume();
+});
 document.getElementById('absBtn').onclick=()=>{benchMode='abs';document.getElementById('absBtn').classList.add('active');document.getElementById('retBtn').classList.remove('active');drawCombined()};
 document.getElementById('retBtn').onclick=()=>{benchMode='ret';document.getElementById('retBtn').classList.add('active');document.getElementById('absBtn').classList.remove('active');drawCombined()};
 document.getElementById('applySmooth').onclick=()=>{const n=Number(document.getElementById('smoothN').value),t=document.getElementById('smoothType').value;if(!Number.isInteger(n)||n<1||n>1260)return alert('Enter a smoothing length from 1 to 1260.');smoothN=n;smoothType=t;localStorage.setItem('ihsg-smooth-n',n);localStorage.setItem('ihsg-smooth-type',t);drawCombined();updateKpis()};

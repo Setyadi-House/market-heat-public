@@ -92,12 +92,20 @@ h1 { font-size: 34px; line-height: 1.1; margin: 7px 0; }
 .volume-controls .control-group { flex-direction: row; align-items: center; }
 .volume-controls .control-label { width: 83px; flex: 0 0 83px; }
 .volume-controls .controls { flex: 1; min-width: 0; }
+.spike-settings { min-width: 0; margin: 0; padding: 9px 11px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+.spike-settings legend { padding: 0 5px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.spike-option-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.spike-option { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.spike-option label { color: var(--muted); font-size: 11px; font-weight: 650; }
+.spike-option .input { width: 100%; min-height: 35px; }
 .chart-navigation { margin: 0 0 5px; }
 .zoom-bar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; }
-.zoom-buttons { display: flex; align-items: center; gap: 6px; }
+.zoom-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .zoom-buttons > .control-label { margin-right: 3px; }
 .zoom-control { min-width: 35px; min-height: 35px; padding: 6px 10px; font-size: 19px; line-height: 1; }
 .zoom-reset { font-size: 12px; min-width: 56px; }
+.pan-control { min-height: 35px; padding: 6px 10px; font-size: 12px; }
+.pan-arrow { font-size: 15px; line-height: 1; }
 .chart-range { color: var(--muted); font-size: 11px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .zoom-help { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
