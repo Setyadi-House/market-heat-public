@@ -104,8 +104,9 @@ h1 { font-size: 34px; line-height: 1.1; margin: 7px 0; }
 .zoom-buttons > .control-label { margin-right: 3px; }
 .zoom-control { min-width: 35px; min-height: 35px; padding: 6px 10px; font-size: 19px; line-height: 1; }
 .zoom-reset { font-size: 12px; min-width: 56px; }
-.pan-control { min-height: 35px; padding: 6px 10px; font-size: 12px; }
-.pan-arrow { font-size: 15px; line-height: 1; }
+.box-zoom-control { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 6px 10px; font-size: 12px; }
+.box-zoom-control svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.box-zoom-control[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 .chart-range { color: var(--muted); font-size: 11px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .zoom-help { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
@@ -142,14 +143,16 @@ h1 { font-size: 34px; line-height: 1.1; margin: 7px 0; }
 .chart-wrap { height: 360px; position: relative; min-width: 0; }
 .chart-wrap.small { height: 300px; }
 .chart-wrap.tall { height: 420px; }
-.chart { display: block; width: 100%; height: 100%; overflow: visible; touch-action: pan-y; }
+.chart { display: block; width: 100%; height: 100%; overflow: visible; touch-action: pan-y; cursor: grab; user-select: none; }
+.chart:focus:not(:focus-visible) { outline: none; }
 .chart:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 4px; }
 .axis { font-size: 10px; fill: var(--muted); }
 .gridline { stroke: var(--grid); stroke-width: 1; }
 .line { fill: none; stroke-width: 2.3; vector-effect: non-scaling-stroke; }
 .raw { stroke-width: 1; opacity: .28; }
-.plot-hit-area, .zoom-hit-area { cursor: crosshair; touch-action: pan-y; }
-.plot-hit-area.selecting, .zoom-hit-area.selecting, .chart.selecting { cursor: col-resize; }
+.plot-hit-area, .zoom-hit-area { cursor: inherit; touch-action: pan-y; }
+.chart[data-interaction-mode="zoom"], .chart[data-interaction-mode="zoom"] .plot-hit-area, .chart[data-interaction-mode="zoom"] .zoom-hit-area { cursor: crosshair; }
+.chart.is-panning, .chart.is-panning .plot-hit-area, .chart.is-panning .zoom-hit-area { cursor: grabbing; }
 .zoom-selection { fill: var(--accent); fill-opacity: .15; stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
 .tooltip { position: absolute; pointer-events: none; display: none; background: #101622; color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 12px; box-shadow: 0 8px 26px #0004; z-index: 5; max-width: calc(100% - 12px); overflow-wrap: anywhere; }
 .regime-key { display: flex; gap: 8px; margin-top: 8px; font-size: 11px; }

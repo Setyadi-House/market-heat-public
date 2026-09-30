@@ -21,21 +21,29 @@ point-in-time IDX breadth index.
 ## Chart controls
 
 Indicator, smoothing, IHSG comparison and history controls appear in labelled,
-responsive groups below the chart title. Scroll over a plot to zoom around the
-pointer, with or without Ctrl, or drag across the plot to select dates. Scrolling
-outside the plot still scrolls the page. Each chart has an independent **Reset
-zoom** button that restores the selected History range; choosing a new History
-range resets all three charts. Focus a chart to use the keyboard **+**, **−** and
-**Home** keys for zoom and reset.
+responsive groups below the chart title. Scroll the mouse wheel over a plot to
+zoom in or out at the latest available date, with or without Ctrl. Scrolling
+returns the view to the latest available dates even after moving into earlier
+history. Scrolling outside the plot still scrolls the page.
 
-Use the earlier/later arrow buttons beside **Reset zoom** to move each chart's
-date window independently through the full available history. The window keeps
-its session count, so a 1Y view can move into earlier years without first zooming.
-The History preset sets the maximum window length; Reset returns to its latest
-period. Focused charts also accept **ArrowLeft** and **ArrowRight**. Buttons
-disable when the beginning or end of available history is reached.
+Click and hold inside a plot, then drag horizontally to move its date window
+continuously through the full available history. The grab cursor changes to a
+grabbing hand while moving. Each chart moves independently and keeps its session
+count, so a 1Y view can move into earlier years without first zooming. The History
+preset sets the maximum window length; **Reset zoom** restores its latest period.
+Choosing a new History range resets all three charts.
 
-While zoomed, numerical axes fit the visible raw and smoothed observations, with
+Each chart has a magnifying-glass **Box zoom** button beside **Reset zoom**.
+Activate it to switch that chart to a crosshair cursor, then click and hold to
+draw a rectangle around the period to inspect. Releasing narrows the date window
+and fits its numerical axes. Box zoom is independent for each chart; its button
+shows the active state. Click it again or press **Escape** on the focused chart to
+return to drag navigation. Escape also cancels an unfinished rectangle.
+
+Focus a chart to use **+** and **−** for zoom, **ArrowLeft** and **ArrowRight** for
+moving dates, and **Home** for reset.
+
+While zoomed or moved, numerical axes fit the visible raw and smoothed observations, with
 padding and the metric's mathematical bounds. The IHSG axis uses its own visible
 values. Reset restores the original breadth, balance and percentage scales.
 Smoothing is calculated from full available history before the chart is sliced,

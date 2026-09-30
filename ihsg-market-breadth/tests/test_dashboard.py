@@ -9,6 +9,7 @@ No providers, credentials, or external web resources are used.
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -134,8 +135,14 @@ class DashboardTests(unittest.TestCase):
     def button(self, chart, action):
         return self.page.locator(f'.zoom-control[data-chart="{chart}"][data-zoom="{action}"]')
 
-    def pan_button(self, chart, direction):
-        return self.page.locator(f'.pan-control[data-chart="{chart}"][data-pan="{direction}"]')
+    def box_button(self, chart):
+        return self.page.locator(f'.box-zoom-control[data-chart="{chart}"]')
+
+    def interaction_mode(self, chart, mode):
+        button = self.box_button(chart)
+        if (button.get_attribute("aria-pressed") == "true") != (mode == "zoom"):
+            button.click()
+        self.assertEqual(button.get_attribute("aria-pressed"), str(mode == "zoom").lower())
 
     def load_payload(self, payload, storage=None):
         """Route aggregate fixtures locally; never change the shipped dataset."""
@@ -218,9 +225,11 @@ class DashboardTests(unittest.TestCase):
         self.settle()
         return self.view(chart)
 
-    def drag(self, chart, start=.2, end=.7):
-        first = self.point(chart, start, .4)
-        last = self.point(chart, end, .4)
+    def drag(self, chart, start=.2, end=.7, top=.25, bottom=.75):
+        """Box zoom is an explicitly selected tool, rather than default dragging."""
+        self.interaction_mode(chart, "zoom")
+        first = self.point(chart, start, top)
+        last = self.point(chart, end, bottom)
         self.page.mouse.move(first["x"], first["y"])
         self.page.mouse.down()
         self.page.mouse.move(last["x"], last["y"], steps=5)
@@ -228,6 +237,19 @@ class DashboardTests(unittest.TestCase):
         self.page.mouse.up()
         self.settle()
         self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
+        return self.view(chart)
+
+    def pan(self, chart, start=.2, end=.6, height=.5):
+        """Use real pointer capture and drag the chart; never emulate navigation buttons."""
+        self.interaction_mode(chart, "pan")
+        first = self.point(chart, start, height)
+        last = self.point(chart, end, height)
+        self.page.mouse.move(first["x"], first["y"])
+        self.page.mouse.down()
+        self.page.mouse.move(last["x"], last["y"], steps=5)
+        self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
+        self.page.mouse.up()
+        self.settle()
         return self.view(chart)
 
     def domain(self, chart, kind="y"):
@@ -382,7 +404,7 @@ class DashboardTests(unittest.TestCase):
                 self.wheel("volumeChart")
                 zoomed = self.view("volumeChart")
                 self.assert_slice(full, zoomed)
-                self.pan_button("volumeChart", "left").click()
+                self.pan("volumeChart")
                 panned = self.view("volumeChart")
                 self.assert_series(panned["smoothed"], reference[panned["start"] : panned["end"]])
                 self.assert_domain_contains(self.domain("volumeChart"), panned["raw"] + panned["smoothed"])
@@ -458,7 +480,7 @@ class DashboardTests(unittest.TestCase):
                 self.assertFalse(self.page.evaluate("!!window.__IHSG_TEST__"))
                 self.assertEqual(self.page.locator("#combinedChart path").count(), 0)
 
-    def test_high_volume_controls_and_pan_buttons_fit_mobile_and_dark_theme(self):
+    def test_high_volume_controls_and_chart_tools_fit_mobile_and_dark_theme(self):
         self.load_payload(self.high_volume_fixture())
         self.page.locator('.volume-mode[data-volume="spike"]').click()
         for width in (320, 375, 768, 1440, 1920):
@@ -468,11 +490,11 @@ class DashboardTests(unittest.TestCase):
                 if currently_dark != dark:
                     self.page.locator("#themeBtn").click()
                 self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
-                for element in self.page.locator("#spikeSettings select, .pan-control, .zoom-reset").all():
+                for element in self.page.locator("#spikeSettings select, .box-zoom-control, .zoom-reset").all():
                     box = element.bounding_box()
                     self.assertGreaterEqual(box["x"], 0)
                     self.assertLessEqual(box["x"] + box["width"], width + 1)
-                self.screenshot(f"options-pan-{width}-{'dark' if dark else 'light'}")
+                self.screenshot(f"options-tools-{width}-{'dark' if dark else 'light'}")
         self.page.locator("#volumeHelpBtn").click()
         text = self.page.locator("#volumeHelpDialog").inner_text()
         self.assertIn("selected", text.lower())
@@ -594,34 +616,44 @@ class DashboardTests(unittest.TestCase):
                 self.history(preset)
                 self.assertEqual(self.counts(), counts)
 
-    def test_pan_buttons_shift_only_the_selected_window_by_twenty_percent(self):
+    def test_default_drag_pans_continuously_and_only_the_selected_chart(self):
         self.history("ALL")
-        self.assertEqual(self.page.locator(".pan-control").count(), 6)
+        self.assertEqual(self.page.locator(".pan-control").count(), 0)
+        available = {chart: self.view(chart) for chart in CHARTS}
+        self.history("1Y")
         original = {chart: self.view(chart) for chart in CHARTS}
         for chart in CHARTS:
             with self.subTest(chart=chart):
-                self.assertTrue(self.pan_button(chart, "left").is_disabled())
-                self.assertTrue(self.pan_button(chart, "right").is_disabled())
-                selected = self.wheel(chart)
-                step = max(1, round(selected["count"] * .2))
-                self.pan_button(chart, "left").click()
-                earlier = self.view(chart)
-                self.assertEqual(earlier["count"], selected["count"])
-                self.assertEqual(earlier["start"], max(0, selected["start"] - step))
-                self.assertEqual(earlier["end"], earlier["start"] + earlier["count"])
-                self.assert_slice(original[chart], earlier)
-                self.assert_domain_contains(self.domain(chart), earlier["raw"] + earlier["smoothed"])
+                self.assertEqual(self.box_button(chart).get_attribute("aria-pressed"), "false")
+                self.assertEqual(self.page.locator(f"#{chart}").get_attribute("data-interaction-mode"), "pan")
+                first = self.point(chart, .2)
+                middle = self.point(chart, .4)
+                last = self.point(chart, .7)
+                self.page.mouse.move(first["x"], first["y"])
+                self.page.mouse.down()
+                self.assertTrue(self.page.locator(f"#{chart}").evaluate("el => el.classList.contains('is-panning')"))
+                self.page.mouse.move(middle["x"], middle["y"], steps=3)
+                held = self.view(chart)
+                self.assertLess(held["start"], original[chart]["start"], "Panning waited until mouse release")
+                self.assertEqual(held["count"], original[chart]["count"])
+                self.page.mouse.move(last["x"], last["y"], steps=3)
+                dragged = self.view(chart)
+                self.assertLess(dragged["start"], held["start"])
+                self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
+                self.assert_slice(available[chart], dragged)
+                self.assert_domain_contains(self.domain(chart), dragged["raw"] + dragged["smoothed"])
                 if chart == "combinedChart":
-                    self.assert_domain_contains(self.domain(chart, "benchmark"), earlier["benchmark"])
+                    self.assert_domain_contains(self.domain(chart, "benchmark"), dragged["benchmark"])
                 for other in CHARTS:
                     if other != chart:
                         self.assertEqual(self.view(other), original[other])
-                self.pan_button(chart, "right").click()
-                self.assertEqual(self.view(chart), selected)
-                self.button(chart, "reset").click()
+                self.page.mouse.up()
+                self.assertEqual(self.view(chart), dragged)
+                self.assertFalse(self.page.locator(f"#{chart}").evaluate("el => el.classList.contains('is-panning')"))
+                self.pan(chart, .7, .2)
                 self.assertEqual(self.view(chart), original[chart])
 
-    def test_pan_buttons_and_arrow_keys_use_available_history_and_keep_preset_size(self):
+    def test_drag_and_arrow_keys_use_full_history_and_clamp_without_resizing(self):
         self.history("ALL")
         available = {chart: self.view(chart) for chart in CHARTS}
         for preset in ("6M", "ALL"):
@@ -630,49 +662,32 @@ class DashboardTests(unittest.TestCase):
             for chart in CHARTS:
                 with self.subTest(preset=preset, chart=chart):
                     selected = self.wheel(chart)
-                    if preset == "ALL":
-                        for _ in range(10):
-                            if self.pan_button(chart, "left").is_disabled():
-                                break
-                            self.pan_button(chart, "left").click()
-                    else:
-                        self.pan_button(chart, "left").click()
-                        self.pan_button(chart, "left").click()
-                    earlier = self.view(chart)
-                    if preset == "ALL":
-                        self.assertEqual(earlier["start"], 0)
-                        self.assertTrue(self.pan_button(chart, "left").is_disabled())
-                    else:
-                        self.assertLess(earlier["start"], base[chart]["start"], "The History preset blocked access to earlier available sessions")
-                        self.assertTrue(self.pan_button(chart, "left").is_enabled())
+                    # Pointer capture keeps the gesture active far outside the plot.
+                    travel = len(self.payload["dates"]) / (selected["count"] - 1) + 2
+                    earlier = self.pan(chart, .2, travel)
+                    self.assertEqual(earlier["start"], 0)
                     self.assertEqual(earlier["count"], selected["count"])
                     self.assert_slice(available[chart], earlier)
                     self.page.locator(f"#{chart}").focus()
                     self.page.keyboard.press("ArrowLeft")
-                    after_key = self.view(chart)
-                    self.assertEqual(after_key["start"], max(0, earlier["start"] - max(1, round(earlier["count"] * .2))))
+                    self.assertEqual(self.view(chart), earlier)
                     self.page.keyboard.press("ArrowRight")
                     moved = self.view(chart)
-                    self.assertEqual(moved["start"], after_key["start"] + max(1, round(earlier["count"] * .2)))
-                    self.assertEqual(moved["count"], earlier["count"])
-                    for _ in range(10):
-                        if self.pan_button(chart, "right").is_disabled():
-                            break
-                        self.pan_button(chart, "right").click()
-                    later = self.view(chart)
-                    self.assertEqual(later["end"], base[chart]["end"])
+                    self.assertEqual(moved["start"], max(1, round(earlier["count"] * .2)))
+                    self.assertEqual(moved["count"], selected["count"])
+                    later = self.pan(chart, .8, -travel)
+                    self.assertEqual(later["end"], len(self.payload["dates"]))
                     self.assertEqual(later["count"], selected["count"])
-                    self.assertTrue(self.pan_button(chart, "right").is_disabled())
                     self.assert_slice(available[chart], later)
                     self.page.locator(f"#{chart}").focus()
                     self.page.keyboard.press("ArrowRight")
                     self.assertEqual(self.view(chart), later)
                     self.button(chart, "reset").click()
                     self.assertEqual(self.view(chart), base[chart])
-                    self.assertEqual(self.pan_button(chart, "left").is_disabled(), preset == "ALL")
-                    self.assertTrue(self.pan_button(chart, "right").is_disabled())
+                    if preset == "ALL":
+                        self.assertEqual(self.pan(chart), base[chart], "Full-history panning resized or shifted the chart")
 
-    def test_default_one_year_view_can_pan_earlier_without_zoom_and_reset_latest(self):
+    def test_default_one_year_view_can_drag_earlier_without_zoom_and_reset_latest(self):
         self.assertEqual(self.page.locator(".range.active").get_attribute("data-range"), "1Y")
         latest = {chart: self.view(chart) for chart in CHARTS}
         self.history("ALL")
@@ -680,16 +695,12 @@ class DashboardTests(unittest.TestCase):
         self.history("1Y")
         for chart in CHARTS:
             with self.subTest(chart=chart):
-                self.assertTrue(self.pan_button(chart, "left").is_enabled())
-                self.assertTrue(self.pan_button(chart, "right").is_disabled())
                 self.assertTrue(self.button(chart, "reset").is_disabled())
-                self.pan_button(chart, "left").click()
-                earlier = self.view(chart)
+                earlier = self.pan(chart, .2, .6)
                 self.assertEqual(earlier["count"], latest[chart]["count"])
-                self.assertEqual(earlier["start"], latest[chart]["start"] - max(1, round(earlier["count"] * .2)))
+                self.assertAlmostEqual(earlier["start"], latest[chart]["start"] - .4 * (earlier["count"] - 1), delta=.501)
                 self.assert_slice(available[chart], earlier)
                 self.assert_domain_contains(self.domain(chart), earlier["raw"] + earlier["smoothed"])
-                self.assertTrue(self.pan_button(chart, "right").is_enabled())
                 self.assertTrue(self.button(chart, "reset").is_enabled())
                 for other in CHARTS:
                     if other != chart:
@@ -784,11 +795,12 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(after["end"], round(.7 * (before["count"] - 1)) + 1)
                 self.screenshot(f"zoom-{chart}")
 
-    def test_cancel_and_lost_capture_leave_no_selection_or_range_change(self):
+    def test_cancel_and_lost_capture_leave_no_box_selection_or_range_change(self):
         self.history("ALL")
         for chart in CHARTS:
             for cancel in ("cancel", "lostcapture"):
                 with self.subTest(chart=chart, cancellation=cancel):
+                    self.interaction_mode(chart, "zoom")
                     before = self.view(chart)
                     first = self.point(chart, .3)
                     last = self.point(chart, .6)
@@ -807,6 +819,149 @@ class DashboardTests(unittest.TestCase):
                     self.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
                     self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
                     self.assertEqual(self.view(chart), before)
+                    self.assertEqual(self.box_button(chart).get_attribute("aria-pressed"), "true")
+
+    def test_wheel_always_zooms_latest_sessions_even_after_panning(self):
+        self.history("ALL")
+        available = {chart: self.view(chart) for chart in CHARTS}
+        for chart in CHARTS:
+            for control, fraction in ((False, .1), (True, .85)):
+                with self.subTest(chart=chart, control=control, fraction=fraction):
+                    self.history("1Y")
+                    base = self.view(chart)
+                    earlier = self.pan(chart)
+                    self.assertLess(earlier["end"], len(self.payload["dates"]))
+                    others = {other: self.view(other) for other in CHARTS if other != chart}
+                    zoomed = self.wheel(chart, control=control, fraction=fraction)
+                    self.assertLess(zoomed["count"], base["count"])
+                    self.assertEqual(zoomed["end"], len(self.payload["dates"]), "Wheel zoom followed the cursor or the old panned window")
+                    self.assert_slice(available[chart], zoomed)
+                    self.assert_domain_contains(self.domain(chart), zoomed["raw"] + zoomed["smoothed"])
+                    for other, original in others.items():
+                        self.assertEqual(self.view(other), original)
+                    # At the preset's size limit, wheel out still returns to latest.
+                    self.button(chart, "reset").click()
+                    self.pan(chart)
+                    latest = self.wheel(chart, 180, control=control, expect_change=False)
+                    self.assertEqual(latest, base)
+                    self.page.locator(f"#{chart}").focus()
+                    for _ in range(20):
+                        self.page.keyboard.press("+")
+                    self.assertEqual(self.view(chart)["count"], 5)
+                    self.pan(chart)
+                    minimum = self.wheel(chart, -180, control=control, expect_change=False)
+                    self.assertEqual(minimum["count"], 5)
+                    self.assertEqual(minimum["end"], len(self.payload["dates"]))
+
+    def test_pan_cancel_and_lost_capture_keep_applied_motion_and_stop_cleanly(self):
+        self.history("1Y")
+        for chart in CHARTS:
+            for cancellation in ("cancel", "lostcapture"):
+                with self.subTest(chart=chart, cancellation=cancellation):
+                    if self.button(chart, "reset").is_enabled():
+                        self.button(chart, "reset").click()
+                    self.interaction_mode(chart, "pan")
+                    before = self.view(chart)
+                    first = self.point(chart, .2)
+                    last = self.point(chart, .6)
+                    self.page.locator(f"#{chart}").evaluate("el => el.addEventListener('pointerdown', ev => window.__pointerId = ev.pointerId, {once:true})")
+                    self.page.mouse.move(first["x"], first["y"])
+                    self.page.mouse.down()
+                    self.page.mouse.move(last["x"], last["y"], steps=3)
+                    applied = self.view(chart)
+                    self.assertLess(applied["start"], before["start"])
+                    if cancellation == "cancel":
+                        self.page.locator(f"#{chart}").evaluate("el => el.dispatchEvent(new PointerEvent('pointercancel', {pointerId:window.__pointerId, bubbles:true}))")
+                    else:
+                        self.page.locator(f"#{chart}").evaluate("el => el.releasePointerCapture(window.__pointerId)")
+                    beyond = self.point(chart, .9)
+                    self.page.mouse.move(beyond["x"], beyond["y"], steps=2)
+                    self.page.mouse.up()
+                    self.settle()
+                    self.assertEqual(self.view(chart), applied)
+                    self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
+                    self.assertFalse(self.page.locator(f"#{chart}").evaluate("el => el.classList.contains('is-panning')"))
+                    self.assertEqual(self.box_button(chart).get_attribute("aria-pressed"), "false")
+
+    def test_box_zoom_draws_a_real_clamped_rectangle_and_selects_dates(self):
+        self.history("ALL")
+        for chart in CHARTS:
+            with self.subTest(chart=chart):
+                self.interaction_mode(chart, "zoom")
+                before = self.view(chart)
+                plot = self.page.locator(f"#{chart} .plot-hit-area").evaluate("el => { const b=el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }")
+                first = self.point(chart, .25, .3)
+                outside = self.point(chart, 1.2, 1.4)
+                self.page.mouse.move(first["x"], first["y"])
+                self.page.mouse.down()
+                self.page.mouse.move(outside["x"], outside["y"], steps=3)
+                selection = self.page.locator(f"#{chart} .zoom-selection")
+                self.assertEqual(selection.count(), 1)
+                box = selection.evaluate("el => { const b=el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }")
+                self.assertAlmostEqual(box["x"], plot["x"] + plot["width"] * .25, delta=.01)
+                self.assertAlmostEqual(box["y"], plot["y"] + plot["height"] * .3, delta=.01)
+                self.assertAlmostEqual(box["width"], plot["width"] * .75, delta=.01)
+                self.assertAlmostEqual(box["height"], plot["height"] * .7, delta=.01)
+                self.assertEqual(self.view(chart), before, "Box selection changed dates before release")
+                self.screenshot(f"box-selection-{chart}")
+                self.page.mouse.up()
+                self.settle()
+                after = self.view(chart)
+                self.assertEqual(after["start"], math.floor(.25 * (before["count"] - 1) + .5))
+                self.assertEqual(after["end"], before["end"])
+                self.assert_slice(before, after)
+                self.assert_domain_contains(self.domain(chart), after["raw"] + after["smoothed"])
+                self.assertEqual(selection.count(), 0)
+                self.assertEqual(self.box_button(chart).get_attribute("aria-pressed"), "true")
+
+    def test_box_tool_is_independent_and_persists_until_toggled_or_escape(self):
+        self.history("ALL")
+        for chart in CHARTS:
+            button = self.box_button(chart)
+            self.assertEqual(button.get_attribute("aria-controls"), chart)
+            self.assertEqual(button.get_attribute("aria-pressed"), "false")
+            self.assertEqual(self.page.locator(f"#{chart}").evaluate("el => getComputedStyle(el).cursor"), "grab")
+        self.drag("combinedChart", .2, .7)
+        self.assertEqual(self.box_button("combinedChart").get_attribute("aria-pressed"), "true")
+        self.assertEqual(self.page.locator("#combinedChart").evaluate("el => getComputedStyle(el).cursor"), "crosshair")
+        for other in ("volumeChart", "coverageChart"):
+            self.assertEqual(self.box_button(other).get_attribute("aria-pressed"), "false")
+        for redraw in (
+            lambda: self.page.locator('.metric[data-metric="ma"]').click(),
+            lambda: self.page.locator("#themeBtn").click(),
+            lambda: self.button("combinedChart", "reset").click(),
+            lambda: self.history("6M"),
+            lambda: self.wheel("combinedChart"),
+        ):
+            redraw()
+            self.assertEqual(self.box_button("combinedChart").get_attribute("aria-pressed"), "true")
+            self.assertEqual(self.page.locator("#combinedChart").get_attribute("data-interaction-mode"), "zoom")
+        self.page.locator("#combinedChart").focus()
+        self.page.keyboard.press("Escape")
+        self.assertEqual(self.box_button("combinedChart").get_attribute("aria-pressed"), "false")
+        self.assertEqual(self.page.locator("#combinedChart").evaluate("el => getComputedStyle(el).cursor"), "grab")
+        self.interaction_mode("volumeChart", "zoom")
+        self.box_button("volumeChart").click()
+        self.assertEqual(self.box_button("volumeChart").get_attribute("aria-pressed"), "false")
+
+    def test_escape_cancels_pending_box_selection_and_returns_to_pan(self):
+        self.history("ALL")
+        for chart in CHARTS:
+            with self.subTest(chart=chart):
+                self.interaction_mode(chart, "zoom")
+                before = self.view(chart)
+                first = self.point(chart, .3, .3)
+                last = self.point(chart, .6, .7)
+                self.page.mouse.move(first["x"], first["y"])
+                self.page.mouse.down()
+                self.page.mouse.move(last["x"], last["y"], steps=3)
+                self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 1)
+                self.page.keyboard.press("Escape")
+                self.assertEqual(self.page.locator(f"#{chart} .zoom-selection").count(), 0)
+                self.assertEqual(self.box_button(chart).get_attribute("aria-pressed"), "false")
+                self.page.mouse.up()
+                self.settle()
+                self.assertEqual(self.view(chart), before)
 
     def test_transformed_mobile_svg_pointer_and_wheel_geometry(self):
         self.page.set_viewport_size({"width": 375, "height": 1080})
@@ -825,6 +980,14 @@ class DashboardTests(unittest.TestCase):
                 self.assertLess(self.view(chart)["count"], before["count"])
                 self.assertGreater(self.view(chart)["start"], 0)
                 self.button(chart, "reset").click()
+                self.history("1Y")
+                latest = self.view(chart)
+                panned = self.pan(chart, .25, .65)
+                self.assertEqual(panned["count"], latest["count"])
+                self.assertAlmostEqual(panned["start"], latest["start"] - .4 * (latest["count"] - 1), delta=.501)
+                self.assert_slice(before, panned)
+                self.button(chart, "reset").click()
+                self.history("ALL")
                 # Wheel in the letterbox scrolls the page without zooming.
                 box = self.page.locator(f"#{chart}").bounding_box()
                 self.page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 2)
