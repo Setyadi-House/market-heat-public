@@ -29,4 +29,5 @@ jobs:
       - name: Test local aggregate dashboard without provider access
         run: |
           node --check ihsg-market-breadth/app.js
+          node --check ihsg-market-breadth/help.js
           python -m unittest discover -s ihsg-market-breadth/tests -v

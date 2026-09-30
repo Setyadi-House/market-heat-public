@@ -21,19 +21,50 @@ point-in-time IDX breadth index.
 ## Chart controls
 
 Indicator, smoothing, IHSG comparison and history controls appear in labelled,
-responsive groups below the chart title. Each chart has independent **+**, **−**
-and **Reset** controls. Drag across the plot to select dates, or use Ctrl + mouse
-wheel over the plot. Ordinary scrolling still scrolls the page. Reset restores
-the selected History range; choosing a new History range resets all three charts.
-Zoom changes the visible dates only. Smoothing is calculated from full available
-history before the chart is sliced, and the underlying aggregate data is unchanged.
+responsive groups below the chart title. Scroll over a plot to zoom around the
+pointer, with or without Ctrl, or drag across the plot to select dates. Scrolling
+outside the plot still scrolls the page. Each chart has an independent **Reset
+zoom** button that restores the selected History range; choosing a new History
+range resets all three charts. Focus a chart to use the keyboard **+**, **−** and
+**Home** keys for zoom and reset.
+
+While zoomed, numerical axes fit the visible raw and smoothed observations, with
+padding and the metric's mathematical bounds. The IHSG axis uses its own visible
+values. Reset restores the original breadth, balance and percentage scales.
+Smoothing is calculated from full available history before the chart is sliced,
+and the underlying aggregate data is unchanged.
+
+## What Volume participation means
+
+The **What do these mean?** popup explains all three volume views. Relative volume
+(RVOL) compares today's observed volume with the prior 20 observed volume bars,
+excluding today. Activity is 100 times the mean RVOL, with each RVOL capped at 5.
+Directional balance weights rising and falling stocks by that capped RVOL;
+unchanged stocks contribute to the denominator. High-volume breadth is the share
+of volume-valid stocks with RVOL at least 1.5.
+
+If all recorded volume weights are zero, Directional balance is undefined because
+its denominator is zero. Its raw value stays missing; Activity and high-volume
+breadth can correctly be zero. The validated snapshot has 18 such dates since
+2023. Source evidence does not establish whether these dates were exchange
+closures or vendor anomalies.
+
+Directional balance display SMA uses the last N **valid observations**, including
+the current value. Undefined dates stay gaps, but do not erase the moving-average
+history: SMA50 resumes on the next valid date rather than hiding another 49
+sessions. EMA uses N as its smoothing span and retains its previous valid state
+across those gaps, with older observations receiving decreasing weight.
+This affects only balance display smoothing; raw series, provider calculations,
+other smoothing and the full 6,147-session history are preserved.
 
 ## What Coverage means
 
 `Coverage = 100 × valid indicator stocks / warmed target stocks`.
 
-Stocks need sufficient observed history and usable MACD, MA100 and Supertrend
-observations. Coverage measures indicator-data availability. A low value means
+The **What is Coverage?** popup defines both counts with a numerical example.
+Target stocks have at least 350 observed stock trading bars; valid stocks are
+those targets with usable MACD, MA100 and Supertrend observations on that date.
+Coverage measures indicator-data availability. A low value means
 the breadth sample is incomplete; it is not the percentage of bullish stocks.
 The dashed 95% line marks a data-quality warning. Dates without a usable stock
 cross-section are excluded rather than published as 0%.
@@ -56,6 +87,7 @@ Use Python 3.12, Node.js and Playwright 1.63.0:
 python -m pip install playwright==1.63.0
 python -m playwright install chromium
 node --check ihsg-market-breadth/app.js
+node --check ihsg-market-breadth/help.js
 python -m unittest discover -s ihsg-market-breadth/tests -v
 ```
 

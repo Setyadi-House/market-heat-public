@@ -27,7 +27,7 @@
 
 <section class="card">
 <div class="card-head">
-  <div><h2>Breadth + IHSG</h2><p>Breadth uses the left 0–100 axis; IHSG uses the right axis so both move on the same timeline.</p></div>
+  <div><h2>Breadth + IHSG</h2><p>Breadth uses the left percentage axis; IHSG uses the right axis on the same timeline. Zooming fits the axes to the visible data.</p></div>
 </div>
 <div class="chart-controls breadth-controls">
   <div class="control-group" role="group" aria-labelledby="breadthControlLabel"><span id="breadthControlLabel" class="control-label">Breadth indicator</span><div class="controls"><button class="metric active" data-metric="macd">MACD</button><button class="metric" data-metric="ma">MA100</button><button class="metric" data-metric="st">Supertrend</button><button class="metric" data-metric="composite">Composite</button></div></div>
@@ -36,48 +36,48 @@
   <div class="control-group" role="group" aria-labelledby="historyControlLabel"><span id="historyControlLabel" class="control-label">History · all charts</span><div class="controls"><button class="range" data-range="6M">6M</button><button class="range active" data-range="1Y">1Y</button><button class="range" data-range="3Y">3Y</button><button class="range" data-range="5Y">5Y</button><button class="range" data-range="ALL">All</button></div></div>
 </div>
 <div class="chart-navigation">
-  <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Breadth chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="combinedChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="combinedChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="combinedChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="combinedChartRange" class="chart-range" aria-live="polite"></span></div>
-  <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
+  <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Breadth chart zoom"><button type="button" class="btn zoom-control zoom-reset" data-chart="combinedChart" data-zoom="reset" aria-label="Reset zoom">Reset zoom</button></div><span id="combinedChartRange" class="chart-range" aria-live="polite"></span></div>
+  <p class="zoom-help">Scroll over the chart to zoom, or use Ctrl + scroll. Drag to select dates. Keyboard: +/− to zoom, Home to reset. Reset restores selected history.</p>
 </div>
-<div class="chart-wrap tall"><svg id="combinedChart" class="chart" viewBox="0 0 1100 420" preserveAspectRatio="none"></svg><div id="combinedTip" class="tooltip"></div></div>
+<div class="chart-wrap tall"><svg id="combinedChart" class="chart" viewBox="0 0 1100 420" preserveAspectRatio="none" tabindex="0" role="img" aria-label="Breadth and IHSG chart. Scroll or Ctrl plus scroll to zoom; drag to select dates. Keyboard: plus or minus to zoom, Home to reset." aria-describedby="combinedChartRange"></svg><div id="combinedTip" class="tooltip"></div></div>
 <div class="legend-row"><span class="legend-chip breadth-line">Breadth smoothed</span><span class="legend-chip raw-line">Breadth raw</span><span class="legend-chip benchmark-line">IHSG</span><span class="low">Low &lt;30</span><span class="mid">Mixed 30–70</span><span class="high">Broad &gt;70</span></div>
 </section>
 
 <section class="grid2">
 <section class="card">
-  <div class="card-head">
+  <div class="card-head with-help">
     <div><h2>Volume participation</h2><p id="volumeHelp">Activity index: 100 means normal relative volume; above 100 means above-normal activity.</p></div>
+    <button id="volumeHelpBtn" type="button" class="btn help-button" data-help="volumeHelpDialog" aria-haspopup="dialog" aria-controls="volumeHelpDialog">What do these mean?</button>
   </div>
   <div class="chart-controls volume-controls">
     <div class="control-group" role="group" aria-labelledby="volumeControlLabel"><span id="volumeControlLabel" class="control-label">Volume view</span><div class="controls"><button class="volume-mode active" data-volume="activity">Activity</button><button class="volume-mode" data-volume="balance">Directional balance</button><button class="volume-mode" data-volume="spike">High-volume breadth</button></div></div>
     <div class="control-group" role="group" aria-labelledby="volSmoothControlLabel"><span id="volSmoothControlLabel" class="control-label">Smoothing</span><div class="controls"><select id="volSmoothType" class="input" aria-label="Volume smoothing method"><option value="SMA" selected>SMA</option><option value="EMA">EMA</option></select><input id="volSmoothN" class="input number" type="number" min="1" max="1260" step="1" value="3" aria-label="Volume smoothing sessions"><button id="applyVolSmooth" class="btn">Apply</button></div></div>
   </div>
   <div class="chart-navigation">
-    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Volume chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="volumeChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="volumeChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="volumeChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="volumeChartRange" class="chart-range" aria-live="polite"></span></div>
-    <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
+    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Volume chart zoom"><button type="button" class="btn zoom-control zoom-reset" data-chart="volumeChart" data-zoom="reset" aria-label="Reset zoom">Reset zoom</button></div><span id="volumeChartRange" class="chart-range" aria-live="polite"></span></div>
+    <p class="zoom-help">Scroll over the chart to zoom, or use Ctrl + scroll. Drag to select dates. Keyboard: +/− to zoom, Home to reset. Reset restores selected history.</p>
   </div>
-  <div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="volumeTip" class="tooltip"></div></div>
+  <div class="chart-wrap small"><svg id="volumeChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none" tabindex="0" role="img" aria-label="Volume participation chart. Scroll or Ctrl plus scroll to zoom; drag to select dates. Keyboard: plus or minus to zoom, Home to reset." aria-describedby="volumeChartRange"></svg><div id="volumeTip" class="tooltip"></div></div>
   <p class="micro-note" id="volumeNote">Raw observations are never fabricated. Missing source sessions remain gaps.</p>
 </section>
 
 <section class="card">
-  <div class="card-head"><div><h2>Coverage</h2><p>Usable indicator observations as a share of warmed target stocks.</p></div></div>
-  <div class="coverage-explanation"><p><strong>Coverage = valid stocks ÷ warmed target stocks × 100.</strong> Valid stocks have usable observations for all required breadth indicators on that date.</p><p>A dip means fewer stocks have usable indicators; it does not measure a market decline. Below 95% is a data-quality warning. If the whole market has no usable stock cross-section, that date is excluded rather than shown as 0%.</p></div>
+  <div class="card-head with-help"><div><h2>Coverage</h2><p>How complete is the indicator data on each date?</p></div><button id="coverageHelpBtn" type="button" class="btn help-button" data-help="coverageHelpDialog" aria-haspopup="dialog" aria-controls="coverageHelpDialog">What is Coverage?</button></div>
   <div class="chart-navigation">
-    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Coverage chart zoom"><span class="control-label">Zoom</span><button type="button" class="btn zoom-control" data-chart="coverageChart" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" class="btn zoom-control" data-chart="coverageChart" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="btn zoom-control zoom-reset" data-chart="coverageChart" data-zoom="reset" aria-label="Reset zoom">Reset</button></div><span id="coverageChartRange" class="chart-range" aria-live="polite"></span></div>
-    <p class="zoom-help">Use +/− to zoom. Drag across chart to select dates; Ctrl + wheel also zooms. Reset restores selected history.</p>
+    <div class="zoom-bar"><div class="zoom-buttons" role="group" aria-label="Coverage chart zoom"><button type="button" class="btn zoom-control zoom-reset" data-chart="coverageChart" data-zoom="reset" aria-label="Reset zoom">Reset zoom</button></div><span id="coverageChartRange" class="chart-range" aria-live="polite"></span></div>
+    <p class="zoom-help">Scroll over the chart to zoom, or use Ctrl + scroll. Drag to select dates. Keyboard: +/− to zoom, Home to reset. Reset restores selected history.</p>
   </div>
-  <div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none"></svg><div id="coverageTip" class="tooltip"></div></div>
+  <div class="chart-wrap small"><svg id="coverageChart" class="chart" viewBox="0 0 1100 300" preserveAspectRatio="none" tabindex="0" role="img" aria-label="Coverage chart. Scroll or Ctrl plus scroll to zoom; drag to select dates. Keyboard: plus or minus to zoom, Home to reset." aria-describedby="coverageChartRange"></svg><div id="coverageTip" class="tooltip"></div></div>
   <p id="coverageStatus" class="micro-note" aria-live="polite"></p>
-  <p class="micro-note">The dashed line marks the 95% data-quality threshold. Coverage is separate from the direction of stock prices.</p>
+  <p class="micro-note">The 95% data-quality threshold appears as a dashed line when it is within the visible scale. Coverage is separate from the direction of stock prices.</p>
 </section>
 </section>
 
 <section class="card"><div class="card-head"><div><h2>How to read it</h2></div></div><div class="notes">
 <p><strong>Breadth:</strong> &lt;30 = weak participation, 30–70 = mixed, &gt;70 = broad. Extremes can persist and are not automatic reversal signals.</p>
 <p><strong>Volume Activity:</strong> 100 = normal relative volume. 130 means aggregate activity is roughly 30% above normal after per-stock normalisation and capping.</p>
-<p><strong>Directional Balance:</strong> positive = abnormal volume is concentrated more in rising stocks; negative = more in falling stocks; 0 = balanced. This is not money flow.</p>
-<p><strong>High-volume breadth:</strong> percentage of valid stocks trading at least 1.5× their own prior-20-observed-session average volume.</p>
+<p><strong>Directional Balance:</strong> positive = more relative-volume weight on rising stocks; negative = more on falling stocks; 0 = balanced weights or unchanged prices. If all valid stocks have zero recorded volume, balance is undefined. This is not money flow.</p>
+<p><strong>High-volume breadth:</strong> percentage of stocks with a valid volume comparison trading at least 1.5× their own prior-20-observed-session average volume.</p>
 </div></section>
 
 <section class="card"><div class="card-head"><div><h2>Methodology & data quality</h2></div></div><div class="facts">
@@ -92,7 +92,29 @@
 
 <footer><span id="footerText"></span><a href="https://github.com/Setyadi-House/ihsg-market-breadth/releases/latest" target="_blank" rel="noopener">Full private interactive snapshot</a></footer>
 </div>
+<dialog id="volumeHelpDialog" class="help-dialog" aria-labelledby="volumeHelpDialogTitle">
+  <div class="dialog-header"><h2 id="volumeHelpDialogTitle">Understanding volume participation</h2><form method="dialog"><button type="submit" class="btn dialog-close" aria-label="Close volume explanation" autofocus>Close</button></form></div>
+  <p>Each view compares a stock's recorded daily volume with its own usual volume, then combines the valid comparisons across stocks.</p>
+  <p class="help-baseline"><strong>Relative volume (RVOL)</strong> = today's volume ÷ average volume of the prior 20 observed trading bars. Today is excluded from the average. RVOL 2 means twice the stock's usual volume.</p>
+  <section class="help-definition"><h3>Activity</h3><p>How busy is trading compared with normal? The index averages each valid stock's RVOL, capped at 5× so one extreme observation does not dominate, then multiplies by 100.</p><p><strong>100</strong> = normal average activity; <strong>200</strong> = twice normal on average. It does not measure total rupiah traded.</p></section>
+  <section class="help-definition"><h3>Directional balance</h3><p>Is relative volume concentrated more in rising or falling stocks? Each valid stock's RVOL, capped at 5×, is given a positive sign when its close rises and a negative sign when it falls, compared with its previous observed close.</p><p><strong>+100</strong> = all relative-volume weight is on rising stocks; <strong>−100</strong> = all is on falling stocks; <strong>0</strong> = the weights cancel or prices are unchanged. Unchanged stocks still count in the total weight. This is not money flowing into or out of the market.</p><p>If every valid stock has recorded volume of zero, there is no volume weight to divide by and balance is unavailable. That is different from a balance of zero.</p></section>
+  <section class="help-definition"><h3>High-volume breadth</h3><p>What share of stocks are unusually active? This is the percentage of stocks with a valid volume comparison whose RVOL is at least <strong>1.5×</strong>.</p><p><strong>40%</strong> means 40 out of every 100 valid stocks traded at least 50% above their usual volume.</p></section>
+  <p class="help-caveat">A valid volume comparison needs recorded volume, a positive historical baseline and usable price and indicator data. Missing observations are excluded and stay missing; they are never changed to zero. For Directional balance, SMA uses the last N available balance observations; EMA uses N as its smoothing span and retains its prior valid state across gaps. Undefined dates stay blank, and smoothing resumes on the next available observation.</p>
+</dialog>
+<dialog id="coverageHelpDialog" class="help-dialog" aria-labelledby="coverageHelpDialogTitle">
+  <div class="dialog-header"><h2 id="coverageHelpDialogTitle">Understanding Coverage</h2><form method="dialog"><button type="submit" class="btn dialog-close" aria-label="Close Coverage explanation" autofocus>Close</button></form></div>
+  <p>Coverage tells you how much of the expected stock universe has usable indicator data on a particular date. It is a data-completeness measure, not a measure of how many stocks are bullish.</p>
+  <dl class="help-definitions">
+    <dt>Target stocks (warmed up)</dt><dd>Stocks in the retrieved roster that have enough history to calculate the indicators: at least <strong>350 observed trading bars</strong>. This is the meaning of “warmed”. Observed bars are recorded stock sessions, not calendar days. A newly listed stock is excluded until it has enough history.</dd>
+    <dt>Valid stocks</dt><dd>Target stocks with usable data for <strong>all three breadth indicators: MACD, MA100 and Supertrend</strong> on that date. A target stock with missing or unusable indicator data is not valid for that date.</dd>
+  </dl>
+  <p class="help-example"><strong>Example:</strong> 900 target stocks are warmed up, and 810 have valid indicators today. Coverage = 810 ÷ 900 × 100 = <strong>90%</strong>. The other 90 lack usable indicator data; it does not mean their prices fell.</p>
+  <p>A downward spike means fewer stocks had usable observations on that date. A short drop followed by recovery can look like a vertical line when many years are shown together. Zoom in and hover to see the date and stock counts.</p>
+  <p>Below <strong>95%</strong> is a data-quality warning. If no target stocks have usable indicators, the whole date is excluded instead of publishing a misleading 0%.</p>
+  <p class="help-caveat">Historical targets use today's retrieved stock roster, rather than a certified historical constituent list. Stocks no longer in that roster may be absent from earlier history, so survivorship bias remains.</p>
+</dialog>
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="help.js"></script>
 </body>
 </html>

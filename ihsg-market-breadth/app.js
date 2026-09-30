@@ -52,6 +52,18 @@ function smoothing(a,n,type){
   }
   return out;
 }
+function observedSmoothing(a,n,type){
+  // Directional balance can be undefined when every valid RVOL weight is zero.
+  // Keep that session missing, but do not discard neighbouring observations.
+  const out=Array(a.length).fill(null),window=[];let sum=0,previous=null;
+  const alpha=2/(n+1);
+  a.forEach((value,index)=>{
+    if(!finite(value))return;
+    if(type==='EMA'){previous=previous===null?value:alpha*value+(1-alpha)*previous;out[index]=previous}
+    else{window.push(value);sum+=value;if(window.length>n)sum-=window.shift();if(window.length===n)out[index]=sum/n}
+  });
+  return out;
+}
 function cutoff(){
   if(range==='ALL')return D.dates[0];
   const d=new Date(D.dates.at(-1)+'T12:00:00Z');
@@ -75,6 +87,7 @@ function view(id){
 }
 function V(a,id){const v=view(id);return a.slice(v.start,v.end)}
 function VD(id){return V(D.dates,id)}
+function isZoomed(id){const v=view(id);return v.start!==startIndex()||v.end!==n}
 function S(tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
 
 function hideTip(id){const tip=document.getElementById(id.replace('Chart','Tip'));if(tip)tip.style.display='none'}
@@ -111,9 +124,11 @@ function rangeStatus(id){
   });
 }
 function geometry(el,scene,ev){
-  const r=el.getBoundingClientRect(),{W,H,p}=scene;
-  const px=(ev.clientX-r.left)/r.width*W,py=(ev.clientY-r.top)/r.height*H;
-  return {r,px,py,fraction:Math.max(0,Math.min(1,(px-p.l)/(W-p.l-p.r))),inside:px>=p.l&&px<=W-p.r&&py>=p.t&&py<=H-p.b};
+  const {W,H,p}=scene,matrix=el.getScreenCTM();
+  if(!matrix)return {px:0,py:0,fraction:0,inside:false};
+  // Screen-to-SVG coordinates also account for letterboxing and CSS transforms.
+  const point=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(matrix.inverse()),px=point.x,py=point.y;
+  return {px,py,fraction:Math.max(0,Math.min(1,(px-p.l)/(W-p.l-p.r))),inside:px>=p.l&&px<=W-p.r&&py>=p.t&&py<=H-p.b};
 }
 function showTip(id,ev){
   const el=document.getElementById(id),scene=scenes.get(id),tip=document.getElementById(id.replace('Chart','Tip'));
@@ -133,13 +148,17 @@ function showTip(id,ev){
 function registerScene(id,scene){
   finishDrag(id);hideTip(id);
   const el=document.getElementById(id),bound=scenes.get(id)?.bound;
-  scenes.set(id,{...scene,bound:true,drag:null});rangeStatus(id);
+  scenes.set(id,{...scene,bound:true,drag:null,wheelDelta:0});rangeStatus(id);
+  el.dataset.yMin=String(scene.yDomain[0]);el.dataset.yMax=String(scene.yDomain[1]);
+  el.dataset.autoScale=String(isZoomed(id));
+  if(scene.benchmarkDomain){el.dataset.benchmarkMin=String(scene.benchmarkDomain[0]);el.dataset.benchmarkMax=String(scene.benchmarkDomain[1])}
   if(bound)return;
   // Listeners live on the persistent SVG, so replacing its series cannot accumulate them.
   el.addEventListener('pointerdown',ev=>{
     const s=scenes.get(id),g=geometry(el,s,ev);
     if(ev.button!==0||ev.isPrimary===false||!g.inside)return;
     ev.preventDefault();
+    el.focus({preventScroll:true});
     hideTip(id);
     const selection=S('rect',{x:g.px,y:s.p.t,width:0,height:s.H-s.p.t-s.p.b,fill:'#4b6bfb','fill-opacity':'.16',stroke:'#4b6bfb','stroke-width':1,'pointer-events':'none',class:'zoom-selection'});
     el.appendChild(selection);
@@ -166,10 +185,25 @@ function registerScene(id,scene){
   ['pointercancel','lostpointercapture'].forEach(type=>el.addEventListener(type,()=>{finishDrag(id);hideTip(id)}));
   el.addEventListener('pointerleave',()=>hideTip(id));
   el.addEventListener('wheel',ev=>{
-    if(!ev.ctrlKey||!ev.deltaY)return;
+    if(!ev.deltaY)return;
     const s=scenes.get(id),g=geometry(el,s,ev);if(!g.inside)return;
-    ev.preventDefault();finishDrag(id);zoom(id,ev.deltaY<0?.8:1.25,g.fraction);
+    // Ordinary wheel and Ctrl+wheel zoom only over the plot. Small trackpad
+    // movements zoom gradually; scrolling over labels or the page stays native.
+    const delta=ev.deltaY*(ev.deltaMode===1?16:ev.deltaMode===2?s.H:1);
+    ev.preventDefault();finishDrag(id);
+    const current=view(id),count=current.end-current.start,baseCount=n-startIndex();
+    if((delta<0&&count===Math.min(5,baseCount))||(delta>0&&count===baseCount)){s.wheelDelta=0;return}
+    if(Math.sign(s.wheelDelta)!==Math.sign(delta))s.wheelDelta=0;
+    // Keep sub-session movements until their combined delta changes the date
+    // window. Otherwise tiny outward trackpad events could stay at five forever.
+    s.wheelDelta+=delta;
+    zoom(id,Math.exp(Math.max(-.4,Math.min(.4,s.wheelDelta*.002))),g.fraction);
   },{passive:false});
+  el.addEventListener('keydown',ev=>{
+    if(ev.key==='+'||ev.key==='='){ev.preventDefault();finishDrag(id);zoom(id,'in')}
+    else if(ev.key==='-'){ev.preventDefault();finishDrag(id);zoom(id,'out')}
+    else if(ev.key==='Home'){ev.preventDefault();finishDrag(id);zoom(id,'reset')}
+  });
 }
 function seriesGroup(el,id,W,H,p){
   const defs=S('defs',{}),clip=S('clipPath',{id:id+'Clip'});
@@ -188,6 +222,19 @@ function linePath(values,x,y){
   values.forEach((v,i)=>{if(finite(v)){d+=(on?'L':'M')+x(i)+' '+y(v)+' ';on=true}else on=false});
   return d;
 }
+function visibleDomain(values,{min=-Infinity,max=Infinity,minSpan=1,fallback=[0,1]}={}){
+  const observed=values.filter(finite);
+  if(!observed.length)return [...fallback];
+  let lo=Math.min(...observed),hi=Math.max(...observed);
+  const padding=Math.max((hi-lo)*.08,minSpan/2);
+  lo=Math.max(min,lo-padding);hi=Math.min(max,hi+padding);
+  if(!(hi>lo))return [...fallback];
+  return [lo,hi];
+}
+function axisValue(value,span){
+  const decimals=Math.max(0,Math.min(4,1-Math.floor(Math.log10(Math.abs(span/4)||1))));
+  return fmt(value,decimals);
+}
 
 function drawCombined(){
   const id='combinedChart',el=document.getElementById(id);
@@ -195,21 +242,25 @@ function drawCombined(){
   const bench=V(benchMode==='abs'?D.ihsg:D.ihsg_1y,id);
   const W=1100,H=420,p={l:54,r:64,t:18,b:32};el.replaceChildren();
   const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1));
-  const yL=v=>p.t+(H-p.t-p.b)*(1-v/100);
+  const [lo,hi]=isZoomed(id)?visibleDomain([...raw,...smooth],{min:0,max:100,minSpan:1,fallback:[0,100]}):[0,100];
+  const yL=v=>p.t+(H-p.t-p.b)*(1-(v-lo)/(hi-lo));
   const bvals=bench.filter(finite);let blo=Math.min(...bvals),bhi=Math.max(...bvals);
   if(!finite(blo)||!finite(bhi)){blo=0;bhi=1}if(blo===bhi){blo-=1;bhi+=1}
   const pad=(bhi-blo)*.08||1;blo-=pad;bhi+=pad;
   const yR=v=>p.t+(H-p.t-p.b)*(1-(v-blo)/(bhi-blo));
-  [[0,30,'#d9534f'],[30,70,'#d9a620'],[70,100,'#2ca36c']].forEach(([lo,hi,c])=>el.appendChild(S('rect',{x:p.l,y:yL(hi),width:W-p.l-p.r,height:yL(lo)-yL(hi),fill:c,opacity:.09})));
-  [0,25,50,75,100].forEach(v=>{const yy=yL(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=v;el.appendChild(t)});
-  for(let q=0;q<=4;q++){const v=blo+(bhi-blo)*q/4,yy=yR(v);const t=S('text',{x:W-p.r+8,y:yy+3,'text-anchor':'start',class:'axis benchmark-axis'});t.textContent=benchMode==='abs'?fmt(v,0):fmt(v,1)+'%';el.appendChild(t)}
+  [[0,30,'#d9534f'],[30,70,'#d9a620'],[70,100,'#2ca36c']].forEach(([bandLo,bandHi,c])=>{
+    const bottom=Math.max(lo,bandLo),top=Math.min(hi,bandHi);if(top<=bottom)return;
+    el.appendChild(S('rect',{x:p.l,y:yL(top),width:W-p.l-p.r,height:yL(bottom)-yL(top),fill:c,opacity:.09}));
+  });
+  for(let q=0;q<=4;q++){const v=lo+(hi-lo)*q/4,yy=yL(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=isZoomed(id)?axisValue(v,hi-lo):String(v);el.appendChild(t)}
+  for(let q=0;q<=4;q++){const v=blo+(bhi-blo)*q/4,yy=yR(v);const t=S('text',{x:W-p.r+8,y:yy+3,'text-anchor':'start',class:'axis benchmark-axis'});t.textContent=(isZoomed(id)?axisValue(v,bhi-blo):fmt(v,benchMode==='abs'?0:1))+(benchMode==='abs'?'':'%');el.appendChild(t)}
   ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dateTick(dates,i);el.appendChild(t)});
   const series=seriesGroup(el,id,W,H,p);
   series.appendChild(S('path',{d:linePath(raw,x,yL),class:'line raw',stroke:'#8da5ff'}));
   series.appendChild(S('path',{d:linePath(smooth,x,yL),class:'line',stroke:'#4b6bfb'}));
   series.appendChild(S('path',{d:linePath(bench,x,yR),class:'line benchmark',stroke:'#c06b18'}));
   el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area',style:'cursor:crosshair;touch-action:pan-y'}));
-  registerScene(id,{W,H,p,dates,raw,smoothed:smooth,benchmark:bench,tooltip:i=>dates[i]+' | raw '+(finite(raw[i])?fmt(raw[i])+'%':'—')+' | '+smoothType+smoothN+' '+(finite(smooth[i])?fmt(smooth[i])+'%':'—')+' | IHSG '+(finite(bench[i])?(benchMode==='abs'?fmt(bench[i],0):fmt(bench[i])+'%'):'—')});
+  registerScene(id,{W,H,p,dates,raw,smoothed:smooth,benchmark:bench,yDomain:[lo,hi],benchmarkDomain:[blo,bhi],tooltip:i=>dates[i]+' | raw '+(finite(raw[i])?fmt(raw[i])+'%':'—')+' | '+smoothType+smoothN+' '+(finite(smooth[i])?fmt(smooth[i])+'%':'—')+' | IHSG '+(finite(bench[i])?(benchMode==='abs'?fmt(bench[i],0):fmt(bench[i])+'%'):'—')});
 }
 
 function drawSingle(id,rawAll,smoothAll,opt){
@@ -218,31 +269,34 @@ function drawSingle(id,rawAll,smoothAll,opt){
   let lo=opt.min,hi=opt.max;
   if(lo==null||hi==null){const vals=[...raw,...smooth].filter(finite);lo=lo??Math.min(...vals);hi=hi??Math.max(...vals)}
   if(!finite(lo)||!finite(hi)){lo=0;hi=1}if(lo===hi){lo-=1;hi+=1}
+  if(isZoomed(id))[lo,hi]=visibleDomain([...raw,...smooth],{min:opt.domainMin??-Infinity,max:opt.domainMax??Infinity,minSpan:opt.minSpan??1,fallback:[lo,hi]});
   const x=i=>p.l+(W-p.l-p.r)*(i/Math.max(1,dates.length-1)),y=v=>p.t+(H-p.t-p.b)*(1-(v-lo)/(hi-lo));
-  for(let q=0;q<=4;q++){const v=lo+(hi-lo)*q/4,yy=y(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=opt.axis?opt.axis(v):fmt(v);el.appendChild(t)}
+  for(let q=0;q<=4;q++){const v=lo+(hi-lo)*q/4,yy=y(v);el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:yy,y2:yy,class:'gridline'}));const t=S('text',{x:p.l-8,y:yy+3,'text-anchor':'end',class:'axis'});t.textContent=opt.axis?opt.axis(v):isZoomed(id)?axisValue(v,hi-lo):fmt(v);el.appendChild(t)}
   if(finite(opt.ref)&&opt.ref>=lo&&opt.ref<=hi){el.appendChild(S('line',{x1:p.l,x2:W-p.r,y1:y(opt.ref),y2:y(opt.ref),class:'reference-line'}))}
   ticksFor(dates).forEach((i,k,a)=>{const t=S('text',{x:x(i),y:H-7,'text-anchor':k===0?'start':k===a.length-1?'end':'middle',class:'axis'});t.textContent=dateTick(dates,i);el.appendChild(t)});
   const series=seriesGroup(el,id,W,H,p);
   series.appendChild(S('path',{d:linePath(raw,x,y),class:'line raw',stroke:opt.color||'#8da5ff'}));
   series.appendChild(S('path',{d:linePath(smooth,x,y),class:'line',stroke:opt.color||'#4b6bfb'}));
   el.appendChild(S('rect',{x:p.l,y:p.t,width:W-p.l-p.r,height:H-p.t-p.b,fill:'transparent',class:'plot-hit-area',style:'cursor:crosshair;touch-action:pan-y'}));
-  registerScene(id,{W,H,p,dates,raw,smoothed:smooth,tooltip:i=>opt.tooltip?opt.tooltip(i+view(id).start):dates[i]+' | raw '+(finite(raw[i])?opt.tip(raw[i]):'—')+' | smoothed '+(finite(smooth[i])?opt.tip(smooth[i]):'—')});
+  registerScene(id,{W,H,p,dates,raw,smoothed:smooth,yDomain:[lo,hi],tooltip:i=>opt.tooltip?opt.tooltip(i+view(id).start):dates[i]+' | raw '+(finite(raw[i])?opt.tip(raw[i]):'—')+' | smoothed '+(finite(smooth[i])?opt.tip(smooth[i]):'—')});
 }
 
 function volumeFields(){
-  if(volMode==='balance')return {raw:D.volume_balance,help:'Directional balance: +100 means abnormal volume is entirely on rising stocks, -100 entirely on falling stocks, 0 is balanced.',min:-100,max:100,ref:0,tip:v=>fmt(v,1),color:'#d9534f'};
+  if(volMode==='balance')return {raw:D.volume_balance,help:'Relative-volume-weighted balance: positive favours rising stocks; negative favours falling stocks.',min:-100,max:100,ref:0,tip:v=>fmt(v,1),color:'#d9534f'};
   if(volMode==='spike')return {raw:D.volume_spike,help:'High-volume breadth: percentage of valid stocks with RVOL ≥ 1.5× their own prior-20-observed-session average.',min:0,max:100,ref:25,tip:v=>fmt(v,1)+'%',color:'#8b5cf6'};
   return {raw:D.volume_index,help:'Activity index: 100 = normal aggregate relative volume. Above 100 = above-normal activity; below 100 = below-normal.',min:0,max:null,ref:100,tip:v=>fmt(v,1),color:'#4b6bfb'};
 }
+function balanceSmoothingLabel(){return volSmoothType+volSmoothN+(volSmoothType==='EMA'?' valid-observation span':' valid observations')}
 function drawVolume(){
-  const f=volumeFields(),sm=smoothing(f.raw,volSmoothN,volSmoothType),vals=[...V(f.raw,'volumeChart'),...V(sm,'volumeChart')].filter(finite);
+  const f=volumeFields(),sm=volMode==='balance'?observedSmoothing(f.raw,volSmoothN,volSmoothType):smoothing(f.raw,volSmoothN,volSmoothType),vals=[...V(f.raw,'volumeChart'),...V(sm,'volumeChart')].filter(finite);
   let max=f.max;if(max==null)max=Math.max(160,(vals.length?Math.max(...vals):160)*1.05);
   document.getElementById('volumeHelp').textContent=f.help;
-  document.getElementById('volumeNote').textContent='Smoothing: '+volSmoothType+volSmoothN+'. Gaps mean source observations were unavailable; they are not filled with zero or interpolated.';
-  drawSingle('volumeChart',f.raw,sm,{min:f.min,max,ref:f.ref,tip:f.tip,color:f.color});
+  const label=volMode==='balance'?balanceSmoothingLabel():volSmoothType+volSmoothN+' sessions';
+  document.getElementById('volumeNote').textContent='Smoothing: '+label+'. '+(volMode==='balance'?'Undefined balance dates stay blank; smoothing resumes at the next valid observation.':'Missing source observations stay blank and are not filled with zero.');
+  drawSingle('volumeChart',f.raw,sm,{min:f.min,max,domainMin:f.min,domainMax:volMode==='activity'?500:f.max,ref:f.ref,tip:f.tip,color:f.color,tooltip:i=>D.dates[i]+' | raw '+(finite(f.raw[i])?f.tip(f.raw[i]):'—')+' | '+label+' '+(finite(sm[i])?f.tip(sm[i]):'—')+(!finite(f.raw[i])&&volMode==='balance'?(D.volume_valid?.[i]>0&&D.volume_index?.[i]===0?' | No directional reading: all valid relative-volume weights are zero.':' | No usable directional observation.'):'')});
 }
 function drawCoverage(){
-  drawSingle('coverageChart',coverageValues,coverageValues,{min:0,max:100,ref:95,tip:v=>fmt(v,1)+'%',color:'#2ca36c',tooltip:i=>D.dates[i]+' | Coverage '+(finite(coverageValues[i])?fmt(coverageValues[i],2)+'%':'N/A')+' | Valid '+(D.eligible?.[i]??'—')+' / target '+(D.target?.[i]??'—')+(finite(coverageValues[i])&&coverageValues[i]<95?' | Incomplete observations; not a market decline.':'')});
+  drawSingle('coverageChart',coverageValues,coverageValues,{min:0,max:100,domainMin:0,domainMax:100,minSpan:.1,ref:95,tip:v=>fmt(v,1)+'%',color:'#2ca36c',tooltip:i=>D.dates[i]+' | Coverage '+(finite(coverageValues[i])?fmt(coverageValues[i],2)+'%':'N/A')+' | Valid '+(D.eligible?.[i]??'—')+' / target '+(D.target?.[i]??'—')+(finite(coverageValues[i])&&coverageValues[i]<95?' | Incomplete observations; not a market decline.':'')});
   const v=view('coverageChart');let low=0,minimum=null;
   for(let i=v.start;i<v.end;i++){
     if(!finite(coverageValues[i]))continue;
@@ -259,8 +313,8 @@ function updateKpis(){
   set('kSt',fmt(last(st))+'%');set('kStSub',reg(last(st)));
   set('kComp',fmt(last(cp))+'%');set('kCompSub',reg(last(cp)));
   set('kValid',String(last(D.eligible)??'—'));set('kCoverage',fmt(last(coverageValues))+'% coverage');
-  const vb=smoothing(D.volume_balance,volSmoothN,volSmoothType);
-  set('kVolBal',fmt(last(vb)));set('kVolSub',volSmoothType+volSmoothN+' smoothed');
+  const vb=observedSmoothing(D.volume_balance,volSmoothN,volSmoothType);
+  set('kVolBal',fmt(last(vb)));set('kVolSub',balanceSmoothingLabel());
 }
 function updateFacts(){
   set('fDate',D.meta.market_as_of);
