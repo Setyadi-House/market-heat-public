@@ -1117,16 +1117,24 @@ class DashboardTests(unittest.TestCase):
                 self.assertNotIn("Infinity", path.get_attribute("d"))
 
     def test_balance_smoothing_resumes_at_next_real_observation(self):
+        payload = self.payload
+        recent_start = next(index for index, date in enumerate(payload["dates"]) if date >= "2023-01-01")
+        if None not in payload["volume_balance"]:
+            # A snapshot without an undefined balance: route a local copy with real holes after 2023 so SMA and EMA
+            # resumption across a gap stays tested (the shipped data is unchanged).
+            payload = json.loads(json.dumps(self.payload))
+            for index in (recent_start + 100, recent_start + 101, recent_start + 300):
+                payload["volume_balance"][index] = None
+            self.load_payload(payload)
         self.history("ALL")
         self.page.locator('.volume-mode[data-volume="balance"]').click()
         self.page.locator("#volSmoothN").fill("50")
-        source = self.payload["volume_balance"]
-        recent_start = next(index for index, date in enumerate(self.payload["dates"]) if date >= "2023-01-01")
+        source = payload["volume_balance"]
         # The legacy 50-calendar-slot rule hid 289 sessions after sparse holes.
         legacy = moving_average(source, 50, "SMA")
         recent_missing = source[recent_start:].count(None)
         self.assertGreaterEqual(legacy[recent_start:].count(None), recent_missing)
-        frozen_checkpoint = self.payload["meta"]["source_sha"] == "5e030093c66215dfed8f5eb60276f1fcdb3033ed" and self.payload["dates"][-1] == "2026-09-29"
+        frozen_checkpoint = payload["meta"]["source_sha"] == "5e030093c66215dfed8f5eb60276f1fcdb3033ed" and payload["dates"][-1] == "2026-09-29"
         if frozen_checkpoint:
             self.assertEqual(legacy[recent_start:].count(None), 289)
             self.assertEqual(recent_missing, 18)
@@ -1148,10 +1156,10 @@ class DashboardTests(unittest.TestCase):
                 self.assert_slice(visible, self.view("volumeChart"))
                 self.button("volumeChart", "reset").click()
                 if method == "SMA" and frozen_checkpoint:
-                    july = self.payload["dates"].index("2023-07-03")
+                    july = payload["dates"].index("2023-07-03")
                     self.assertAlmostEqual(visible["smoothed"][july], 1.51823432, places=7)
                     self.assertAlmostEqual(visible["smoothed"][-1], 10.37746432, places=7)
-        self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), self.payload)
+        self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), payload)
 
     def test_help_dialogs_explain_volume_modes_and_coverage_terms(self):
         self.page.locator("#volumeHelpBtn").click()
