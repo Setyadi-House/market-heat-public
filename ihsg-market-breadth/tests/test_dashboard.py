@@ -62,6 +62,13 @@ def moving_average(values, length, method, observed=False):
     return result
 
 
+def inclusive_ends(fraction, count):
+    """Exclusive end of a drag ending at `fraction` of the axis. At an exact half the pointer-derived fraction may
+    round either way, so both sessions are accepted there (the history length changes with every session)."""
+    end = fraction * (count - 1)
+    return {round(end) + 1} if abs(end % 1 - .5) > 1e-9 else {int(end) + 1, int(end) + 2}
+
+
 class DashboardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -293,8 +300,10 @@ class DashboardTests(unittest.TestCase):
     def test_real_payload_alignment_and_full_history(self):
         data = self.payload
         dates = data["dates"]
-        self.assertGreaterEqual(len(dates), 6147, "Validated available history was truncated")
-        self.assertEqual(dates[0], "2001-06-18")
+        # Owner decision 2026-10-06 (private pipeline V8): the active dataset starts on 2005-07-01, so the display
+        # starts on 2006-12-08 after 350 observed warm-up bars; each later session only extends it.
+        self.assertGreaterEqual(len(dates), 4806, "Validated available history was truncated")
+        self.assertEqual(dates[0], "2006-12-08")
         self.assertEqual(dates, sorted(set(dates)))
         self.assertEqual(data["meta"]["history_start"], dates[0])
         self.assertEqual(data["meta"]["market_as_of"], dates[-1])
@@ -792,7 +801,7 @@ class DashboardTests(unittest.TestCase):
                 self.assert_slice(before, after)
                 self.assertEqual(after["count"], after["end"] - after["start"])
                 self.assertEqual(after["start"], round(.2 * (before["count"] - 1)))
-                self.assertEqual(after["end"], round(.7 * (before["count"] - 1)) + 1)
+                self.assertIn(after["end"], inclusive_ends(.7, before["count"]))
                 self.screenshot(f"zoom-{chart}")
 
     def test_cancel_and_lost_capture_leave_no_box_selection_or_range_change(self):
@@ -973,7 +982,7 @@ class DashboardTests(unittest.TestCase):
                 before = self.view(chart)
                 after = self.drag(chart, .2, .7)
                 self.assertEqual(after["start"], round(.2 * (before["count"] - 1)))
-                self.assertEqual(after["end"], round(.7 * (before["count"] - 1)) + 1)
+                self.assertIn(after["end"], inclusive_ends(.7, before["count"]))
                 self.assert_slice(before, after)
                 self.button(chart, "reset").click()
                 self.wheel(chart, control=True, fraction=.75)
@@ -1083,10 +1092,18 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(actual["raw"], self.payload[source][actual["start"] : actual["end"]])
 
     def test_missing_volume_gaps_break_paths_and_series_are_clipped(self):
+        payload = self.payload
+        if None not in payload["volume_balance"]:
+            # A snapshot without an undefined balance: route a local copy with gaps (the shipped data is unchanged).
+            payload = json.loads(json.dumps(self.payload))
+            middle = len(payload["dates"]) // 2
+            for index in (middle // 2, middle // 2 + 1, middle):
+                payload["volume_balance"][index] = None
+            self.load_payload(payload)
         self.history("ALL")
         self.page.locator('.volume-mode[data-volume="balance"]').click()
         visible = self.view("volumeChart")
-        self.assertEqual(visible["raw"], self.payload["volume_balance"])
+        self.assertEqual(visible["raw"], payload["volume_balance"])
         self.assertGreater(visible["raw"].count(None), 0)
         self.assert_series(visible["smoothed"], moving_average(visible["raw"], 3, "SMA", observed=True))
         runs = sum(value is not None and (index == 0 or visible["raw"][index - 1] is None) for index, value in enumerate(visible["raw"]))
@@ -1100,16 +1117,24 @@ class DashboardTests(unittest.TestCase):
                 self.assertNotIn("Infinity", path.get_attribute("d"))
 
     def test_balance_smoothing_resumes_at_next_real_observation(self):
+        payload = self.payload
+        recent_start = next(index for index, date in enumerate(payload["dates"]) if date >= "2023-01-01")
+        if None not in payload["volume_balance"]:
+            # A snapshot without an undefined balance: route a local copy with real holes after 2023 so SMA and EMA
+            # resumption across a gap stays tested (the shipped data is unchanged).
+            payload = json.loads(json.dumps(self.payload))
+            for index in (recent_start + 100, recent_start + 101, recent_start + 300):
+                payload["volume_balance"][index] = None
+            self.load_payload(payload)
         self.history("ALL")
         self.page.locator('.volume-mode[data-volume="balance"]').click()
         self.page.locator("#volSmoothN").fill("50")
-        source = self.payload["volume_balance"]
-        recent_start = next(index for index, date in enumerate(self.payload["dates"]) if date >= "2023-01-01")
+        source = payload["volume_balance"]
         # The legacy 50-calendar-slot rule hid 289 sessions after sparse holes.
         legacy = moving_average(source, 50, "SMA")
         recent_missing = source[recent_start:].count(None)
         self.assertGreaterEqual(legacy[recent_start:].count(None), recent_missing)
-        frozen_checkpoint = self.payload["meta"]["source_sha"] == "5e030093c66215dfed8f5eb60276f1fcdb3033ed" and self.payload["dates"][-1] == "2026-09-29"
+        frozen_checkpoint = payload["meta"]["source_sha"] == "5e030093c66215dfed8f5eb60276f1fcdb3033ed" and payload["dates"][-1] == "2026-09-29"
         if frozen_checkpoint:
             self.assertEqual(legacy[recent_start:].count(None), 289)
             self.assertEqual(recent_missing, 18)
@@ -1131,10 +1156,10 @@ class DashboardTests(unittest.TestCase):
                 self.assert_slice(visible, self.view("volumeChart"))
                 self.button("volumeChart", "reset").click()
                 if method == "SMA" and frozen_checkpoint:
-                    july = self.payload["dates"].index("2023-07-03")
+                    july = payload["dates"].index("2023-07-03")
                     self.assertAlmostEqual(visible["smoothed"][july], 1.51823432, places=7)
                     self.assertAlmostEqual(visible["smoothed"][-1], 10.37746432, places=7)
-        self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), self.payload)
+        self.assertEqual(self.page.evaluate("window.IHSG_PUBLIC_DATA"), payload)
 
     def test_help_dialogs_explain_volume_modes_and_coverage_terms(self):
         self.page.locator("#volumeHelpBtn").click()
