@@ -14,9 +14,21 @@ The calculation pipeline and stock-level vendor observations remain private in:
 https://github.com/Setyadi-House/ihsg-market-breadth
 
 The public display intentionally does not publish API keys or stock-level raw
-FMP/EODHD payloads. Historical breadth uses the current provider-covered universe,
+IDX/EODHD data. Historical breadth uses the current provider-covered universe,
 so it is a research view with survivorship limitations rather than an official
 point-in-time IDX breadth index.
+
+## How the data is updated
+
+`data.js` is written automatically by the private production workflow after a
+validated release: only the release's aggregate `public-data.js`, byte for byte,
+after its checksum and the aggregate-only schema are verified. An older or equal
+market date never replaces a newer one, and the workflow fails visibly when this
+page does not serve the latest validated output. The displayed sources and dates
+come from the file's own metadata. From 2026-10-08 the IDX official daily stock
+summary is the primary source of new sessions, with EODHD as a fallback labelled
+per row; the history starts on 2006-12-08 (active dataset from 2005-07-01 after
+350 observed warm-up bars).
 
 ## Chart controls
 
@@ -73,8 +85,9 @@ tooltip shows the selected parameters and counts.
 
 If all recorded volume weights are zero, Directional balance is undefined because
 its denominator is zero. Its raw value stays missing; Activity and high-volume
-breadth can correctly be zero. The validated snapshot has 18 such dates since
-2023. Source evidence does not establish whether these dates were exchange
+breadth can correctly be zero. The 2026-09-29 snapshot had 18 such dates since
+2023; later snapshots, with the private quarantine of unverified rows, can have
+none. Source evidence does not establish whether these dates were exchange
 closures or vendor anomalies.
 
 Directional balance display SMA uses the last N **valid observations**, including
@@ -83,7 +96,7 @@ history: SMA50 resumes on the next valid date rather than hiding another 49
 sessions. EMA uses N as its smoothing span and retains its previous valid state
 across those gaps, with older observations receiving decreasing weight.
 This affects only balance display smoothing; raw series, provider calculations,
-other smoothing and the full 6,147-session history are preserved.
+other smoothing and the full available history are preserved.
 
 ## What Coverage means
 
@@ -101,9 +114,9 @@ The chart derives the exact percentage from the public integer counts, including
 older exports that rounded the percentage. Its tooltip shows the date and valid
 / target counts; the note below summarizes low-coverage sessions in the view.
 
-In the validated 2026-09-29 snapshot, 2023-06-28 and 2023-06-30 each have
-8 valid stocks / 713 target stocks (1.1220196353436185%). These isolated declines
-look nearly vertical when 25 years are compressed into one chart. Available
+In the earlier 2026-09-29 snapshot, 2023-06-28 and 2023-06-30 each had
+8 valid stocks / 713 target stocks (1.1220196353436185%). Isolated declines like
+these look nearly vertical when two decades are compressed into one chart. Available
 calendar evidence does not establish whether the sparse vendor observations
 reflect exchange closures or source outages, so these nonzero values are retained.
 
