@@ -25,8 +25,8 @@
     UPDATES_NOT_ENABLED: 'Automatic Margin updates have not been enabled yet.',
     CALENDAR_UNPROVEN: 'The official exchange calendar for these dates is not pinned yet.',
     REQUEST_BUDGET: 'More sessions are pending than one run collects.',
-    DATE_CROSS_CHECK_UNAVAILABLE: 'The exchange’s own daily data needed to confirm the file’s date is not available yet.',
-    DATE_CROSS_CHECK_FAILED: 'A downloaded file did not match the exchange’s data for its date; it was not used.',
+    DATE_CROSS_CHECK_UNAVAILABLE: 'The All Stock daily data needed to confirm the file’s date is not available yet.',
+    DATE_CROSS_CHECK_FAILED: 'A downloaded file did not match the All Stock data of its date; it was not used.',
     EXPORT_QC_FAILED: 'A downloaded file failed its quality checks; it was not used.',
     REPEATED_FAILURE_OWNER_REVIEW: 'A session failed its checks repeatedly and waits for review.',
     IDX_ACCESS_REFUSED: 'The IDX website refused the request.',
@@ -501,7 +501,7 @@
     set('smSuccess', update.last_success_at || 'No update run has added a session yet.');
     set('smQc', qc.sessions_pass + ' sessions PASS, ' + qc.sessions_pass_with_warnings + ' PASS with warnings (' + qc.warning_count +
       ' warnings). All nine original columns are verified and kept privately; the public file carries Stock Code, Nilai, Volume and Frequency. ' +
-      'Date evidence: ' + qc.date_evidence + '. Sessions also matched to the exchange’s All Stock price range of the same day: ' +
+      'Date evidence: ' + qc.date_evidence + '. Sessions also matched to the same session’s All Stock price range: ' +
       qc.all_stock_cross_check.passed_sessions + ' of ' + qc.all_stock_cross_check.checked_sessions + ' checked.');
     set('smSnapshot', 'Revision ' + meta.snapshot.revision + ', generated ' + meta.snapshot.generated_at + ', content SHA-256 ' +
       meta.snapshot.content_sha256.slice(0, 16) + '…');
