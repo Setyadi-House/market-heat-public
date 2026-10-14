@@ -244,3 +244,12 @@ the index base, moving averages against an independent reference, gaps, the
 independent date controls, tables, exports, themes, mobile widths, tooltips, the
 expanded view, loading and failure states). Optional `IHSG_SCREENSHOT_DIR` saves
 UI evidence outside the source tree.
+
+## Live page check
+
+The manual workflow **IHSG live page check** (`.github/workflows/ihsg-live-page-check.yml`, main only, no secret)
+runs `tests/live_page_check.py` against the deployed page. It compares the SHA-256 of every served file with the
+commit, waiting up to ten minutes for a Pages deployment. It checks the served `margin-data.js` (its own content
+hash, the verified 2024-09-02 → 2026-10-13 archive, the latest session). Then it opens Market Breadth, Margin Monitor
+and Data Status in Chromium at desktop and mobile width, without a script error or a failed request. The report and
+screenshots are kept as the run's artifact.
