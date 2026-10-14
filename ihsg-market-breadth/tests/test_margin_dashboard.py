@@ -331,6 +331,9 @@ class MarginDashboardTests(unittest.TestCase):
         expected = [None if v is None else 100 * v / reference for v in data["total_value"]]
         self.assert_series(state["agg"]["raw"], expected)
         self.assertIn("base 2024-09-02 = 100", self.page.locator("#marginAggTitle").inner_text())
+        # the KPIs say what the numbers are not
+        self.assertIn("not a price return", self.page.locator("#mkIndexSub").inner_text())
+        self.assertIn("not margin debt", self.page.locator("#mkValueSub").inner_text())
         self.assertEqual(self.page.locator("#marginAggChart .base-marker").count(), 1)
         # panning, zooming and other date ranges never rebase it
         self.page.locator('.marginAgg-range[data-range="3M"]').click()

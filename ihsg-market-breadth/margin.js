@@ -684,8 +684,9 @@
       M.meta.first_date + ' · ' + updateSentence(update));
     $('marginStatusChip').textContent = update.status; $('marginStatusChip').dataset.status = update.status;
     const last = M.dates.length - 1, totals = M.total_value;
-    set('mkValue', fmtBn(totals[last])); set('mkValueSub', M.meta.latest_date + ' · ' + M.records[last] + ' stocks');
-    set('mkIndex', (100 * totals[last] / M.meta.base_value).toFixed(1)); set('mkIndexSub', 'base ' + M.meta.base_date + ' = 100');
+    set('mkValue', fmtBn(totals[last])); set('mkValueSub', M.meta.latest_date + ' · ' + M.records[last] + ' stocks · transaction value, not margin debt');
+    set('mkIndex', (100 * totals[last] / M.meta.base_value).toFixed(1));
+    set('mkIndexSub', 'base ' + M.meta.base_date + ' = 100 · transaction activity, not a price return');
     const sma = C.movingAverage(totals, 20, 'SMA', 'observed')[last];
     set('mkSma', fmtBn(sma)); set('mkSmaSub', 'SMA20 of the daily value');
     set('mkSessions', M.meta.sessions.toLocaleString('en-US')); set('mkSessionsSub', M.meta.records.toLocaleString('en-US') + ' stock records');
