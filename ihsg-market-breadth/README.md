@@ -4,31 +4,64 @@ Direct dashboard:
 
 https://setyadi-house.github.io/market-heat-public/ihsg-market-breadth/
 
-This directory is the public, aggregate-only display layer for the IHSG Market
-Breadth project. It shows derived market-participation indicators such as MACD
-breadth, MA100 breadth, Supertrend breadth, IHSG performance, volume participation
-and coverage.
+The page has three sections, chosen with the tabs under the title (keyboard:
+ArrowLeft/ArrowRight, Home, End) or directly by address:
 
-The calculation pipeline and stock-level vendor observations remain private in:
+| Section | Address | Shows |
+|---|---|---|
+| Market Breadth | `…/ihsg-market-breadth/` or `#breadth` | Aggregate MACD, MA100 and Supertrend breadth, IHSG, volume participation and coverage (unchanged). |
+| Margin Monitor | `#margin`, or `#margin/BBCA` for one stock | Daily transaction value of the official IDX Margin section: aggregate chart, stock chart, daily and period tables. |
+| Data Status | `#status` | Freshness and quality of each dataset, stated separately. |
+
+The calculation pipeline, its source archives and the stock-level vendor
+observations remain private in:
 
 https://github.com/Setyadi-House/ihsg-market-breadth
 
-The public display intentionally does not publish API keys or stock-level raw
-IDX/EODHD data. Historical breadth uses the current provider-covered universe,
-so it is a research view with survivorship limitations rather than an official
+**Public/private boundary.** Market Breadth stays aggregate-only: `data.js`
+carries no tickers or per-stock arrays and no stock-level IDX/EODHD data.
+Historical breadth uses the current provider-covered universe, so it is a
+research view with survivorship limitations rather than an official
 point-in-time IDX breadth index.
+
+The Margin Monitor is the one explicit stock-level exception, and only for
+official IDX Margin records: `margin-data.js` holds, per verified session, the
+stock code and the source's own Nilai (value, IDR), Volume and Frekuensi of the
+Margin section of the IDX daily stock summary (Ringkasan Saham), plus session
+totals, counts and status. It never contains vendor prices or volumes, breadth
+inputs, private caches or archives, repair ledgers, proxy or network details, or
+credentials. All nine original columns stay in the private archive.
 
 ## How the data is updated
 
-`data.js` is written automatically by the private production workflow after a
-validated release: only the release's aggregate `public-data.js`, byte for byte,
-after its checksum and the aggregate-only schema are verified. An older or equal
-market date never replaces a newer one, and the workflow fails visibly when this
-page does not serve the latest validated output. The displayed sources and dates
-come from the file's own metadata. From 2026-10-08 the IDX official daily stock
-summary is the primary source of new sessions, with EODHD as a fallback labelled
-per row; the history starts on 2006-12-08 (active dataset from 2005-07-01 after
-350 observed warm-up bars).
+Each dataset has its own file, its own validation and its own guard, so one can
+never hold back or overwrite the other.
+
+`data.js` (Market Breadth) is written automatically by the private production
+workflow after a validated release: only the release's aggregate
+`public-data.js`, byte for byte, after its checksum and the aggregate-only schema
+are verified. An older or equal market date never replaces a newer one, and the
+workflow fails visibly when this page does not serve the latest validated output.
+The displayed sources and dates come from the file's own metadata. From
+2026-10-08 the IDX official daily stock summary is the primary source of new
+sessions, with EODHD as a fallback labelled per row; the history starts on
+2006-12-08 (active dataset from 2005-07-01 after 350 observed warm-up bars).
+
+`margin-data.js` (Margin Monitor) is a separately versioned snapshot. Revision 1,
+deployed with this page, is the verified historical archive: 503 sessions and
+98,986 stock records from 2024-09-02 to 2026-10-13 (433 stock codes). After the
+owner enables Margin updates, the same daily private workflow collects only new
+sessions from the Margin section of
+https://www.idx.co.id/id/data-pasar/ringkasan-perdagangan/ringkasan-saham/,
+verifies each file (its date, structure and values) and then replaces this file
+only with a validated snapshot whose latest session or revision is newer; equal
+content is not rewritten and the file is never created by the update (it ships
+with the page). Its guard is independent of the breadth market date. When
+collection is not enabled, refused, held or failed, the last verified data stays
+and the page shows that status; Margin values are never estimated, and a missing
+file is never treated as a holiday or as zero Margin trading. Loading the page
+does not download `margin-data.js`: it is fetched only when Margin Monitor or
+Data Status is first opened.
 
 ## Chart controls
 
@@ -120,6 +153,77 @@ these look nearly vertical when two decades are compressed into one chart. Avail
 calendar evidence does not establish whether the sparse vendor observations
 reflect exchange closures or source outages, so these nonzero values are retained.
 
+## Margin Monitor
+
+All values are the Margin section of the official IDX daily stock summary.
+
+- **Nilai (Margin value):** the reported transaction value, in rupiah, of a
+  stock's Margin-section trades on one session. It is not outstanding margin
+  debt, broker receivables, net buying or leverage.
+- **Daily Margin value:** the sum of Nilai over every verified Margin record of
+  the session.
+- **Activity index:** `100 × daily Margin value ÷ daily Margin value of the base
+  session`. The default base is 2024-09-02 = 100. Another verified session with a
+  positive total can be chosen and is always shown; dates without a verified
+  session are refused. Zooming, moving or changing the visible dates never
+  rebases it. It measures transaction activity, not a price return.
+- **Period value:** each stock's sum of daily Nilai over the verified sessions
+  of the selected period (cumulative transaction value, not a balance), with its
+  share of the period total and the number of sessions with and without a record.
+
+Controls, each independent of the others:
+
+- The **aggregate chart** (full width, 480 px on desktop) switches between the
+  nominal daily value (IDR) and the activity index, and has its own date range
+  (1M, 3M, 6M, YTD, 1Y, All, or start and end dates), drag/scroll/Box zoom
+  navigation, Reset zoom and moving average.
+- The **stock chart** (full width, 480 px) shows the selected stock's daily Nilai
+  as bars with its own moving average and date range. Choose the stock by code
+  (with suggestions, previous/next buttons) or by clicking a code in either
+  table; the address `#margin/CODE` opens it directly.
+- **Expand** shows either chart full screen; Escape or the button closes it.
+- The **daily stock snapshot** table defaults to the latest verified session and
+  lists Trade Date, Stock Code, value, share of the day, volume, frequency and
+  value per trade. The **period stock breakdown** has its own Period Start and
+  Period End (default: the last month). Both sort by any column and filter by
+  code.
+- **Export CSV** on each chart and table downloads the shown selection with a
+  header naming the source, the snapshot revision and its SHA-256.
+
+Moving averages (SMA or EMA, a whole number of sessions from 1 to 1260, default
+SMA20) are set separately for the aggregate and the stock chart. They are
+computed on the full history before the visible dates are cut, so zooming never
+changes them, and they use only past and current sessions. The aggregate
+average skips sessions without a verified file. For a stock, **Observed records**
+uses its last N records and skips sessions without one; **Consecutive sessions**
+needs a record on each of the last N sessions, so a session without one breaks
+it. Until enough history exists the average is not drawn. The raw series stays
+visible (the aggregate's can be hidden). A stock without a record on a verified
+session had no Margin trades reported that day: it stays empty, never zero. An
+expected session without a verified file is drawn as a dashed line and named in
+the tooltip; it is never filled.
+
+## Data Status
+
+Data Status states each dataset's own status. For Market Breadth: whether its
+file validated in the browser, the market date, history, latest coverage,
+source priority and the publication rule. For IDX Margin: the update status
+recorded by the last run (for example *Verified checkpoint*, *Up to date*,
+*Update unavailable* with the reason), when it was recorded and the latest
+expected session at that time, the verified dataset, the imported archive and
+what daily updates added, pending sessions, gaps, the last successful update,
+quality checks, stock participation per session and the snapshot revision, plus
+completeness by month. Dataset completeness counts sessions; a stock's daily
+participation is a separate matter. Nothing on the page derives freshness from
+the device clock.
+
+## Themes
+
+**Dark mode / Light mode** in the header switches every section, including chart
+colours, tooltips and native date controls, and the choice is remembered in this
+browser. Margin settings (chart series, moving averages, aggregate range, last
+stock) are remembered too and fall back to the defaults when invalid.
+
 ## Offline UI checks
 
 Use Python 3.12, Node.js and Playwright 1.63.0:
@@ -127,12 +231,25 @@ Use Python 3.12, Node.js and Playwright 1.63.0:
 ```sh
 python -m pip install playwright==1.63.0
 python -m playwright install chromium
-node --check ihsg-market-breadth/app.js
-node --check ihsg-market-breadth/help.js
+for file in app help charts margin shell; do node --check ihsg-market-breadth/$file.js; done
 python -m unittest discover -s ihsg-market-breadth/tests -v
 ```
 
 Run the commands from the repository root. Set `IHSG_BROWSER` to an existing
 Chromium executable when the managed download is unavailable. Tests serve only
 local files, reject external browser requests, and require no provider credentials.
-Optional `IHSG_SCREENSHOT_DIR` saves UI evidence outside the source tree.
+`tests/test_dashboard.py` covers Market Breadth; `tests/test_margin_dashboard.py`
+covers the Margin Monitor, Data Status and the navigation (payload invariants,
+the index base, moving averages against an independent reference, gaps, the
+independent date controls, tables, exports, themes, mobile widths, tooltips, the
+expanded view, loading and failure states). Optional `IHSG_SCREENSHOT_DIR` saves
+UI evidence outside the source tree.
+
+## Live page check
+
+The manual workflow **IHSG live page check** (`.github/workflows/ihsg-live-page-check.yml`, main only, no secret)
+runs `tests/live_page_check.py` against the deployed page. It compares the SHA-256 of every served file with the
+commit, waiting up to ten minutes for a Pages deployment. It checks the served `margin-data.js` (its own content
+hash, the verified 2024-09-02 → 2026-10-13 archive, the latest session). Then it opens Market Breadth, Margin Monitor
+and Data Status in Chromium at desktop and mobile width, without a script error or a failed request. The report and
+screenshots are kept as the run's artifact.

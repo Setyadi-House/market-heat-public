@@ -420,7 +420,7 @@ function updateFacts(){
   set('fCap',fmt(D.meta.cap_coverage_pct??D.meta.last_cap_coverage_pct,2)+'%');
   set('fSources',D.meta.source_priority||((D.meta.sources||[]).map(x=>typeof x==='string'?x:x.name).join(' · '))||D.meta.benchmark_provider||'—');
   set('fMethod',D.meta.methodology||D.meta.universe||'Current-roster retrospective breadth; survivorship bias applies.');
-  set('footerText','Aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' valid breadth sessions');
+  set('footerText','Market Breadth: aggregate-only public display · market date '+D.meta.market_as_of+' · '+D.dates.length.toLocaleString()+' valid breadth sessions');
 }
 function drawAll(){drawCombined();drawVolume();drawCoverage();updateKpis()}
 
@@ -457,6 +457,8 @@ document.getElementById('applyVolSmooth').onclick=()=>{const n=Number(document.g
 const age=Math.floor((Date.now()-new Date(D.meta.market_as_of+'T00:00:00Z'))/86400000);
 if(age>4){const b=document.getElementById('staleBanner');b.className='banner show';b.textContent='Data may be stale: last market observation is '+D.meta.market_as_of+'.';}
 updateFacts();drawAll();
+// Data Status reads this: the payload validated and every breadth chart was drawn.
+window.IHSG_BREADTH_READY=true;
 // Inspection exposes only the aggregate chart view, never stock-level observations.
 window.__IHSG_TEST__=Object.freeze({getView:id=>{
   if(!chartIds.includes(id))return null;
